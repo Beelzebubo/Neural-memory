@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neural Memory</title>
+  <link rel="stylesheet" href="/ui/static/css/app.css">
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+  <script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+  <script defer src="/ui/static/js/app.js"></script>
+</head>
+<body>
+  <div id="app">
+    <header id="topbar">
+      <div class="topbar-left">
+        <span class="logo-icon">🧠</span>
+        <span class="logo-text">Neural Memory</span>
+        <span class="memory-count-badge" id="headerCount">0</span>
+      </div>
+      <div class="topbar-right">
+        <button class="topbar-btn" id="btnSearch" title="Search" data-view="search">
+          <i class="ph ph-magnifying-glass"></i>
+        </button>
+        <button class="topbar-btn" id="btnSettings" title="Settings" data-view="config">
+          <i class="ph ph-gear-six"></i>
+        </button>
+      </div>
+    </header>
+
+    <div id="layout">
+      <aside id="sidebar">
+        <div class="sidebar-section">
+          <div class="sidebar-section-header">
+            <span class="sidebar-section-title">Memories</span>
+            <span class="badge" id="sidebarCount">0</span>
+          </div>
+          <div class="sidebar-list" id="sidebarList">
+            <div class="skeleton-line"></div>
+            <div class="skeleton-line"></div>
+            <div class="skeleton-line"></div>
+          </div>
+        </div>
+
+        <div class="sidebar-divider"></div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-section-header collapsible collapsed" id="tagsHeader">
+            <i class="ph ph-caret-right"></i>
+            <span class="sidebar-section-title">Tags</span>
+          </div>
+          <div class="sidebar-list hidden" id="tagsList"></div>
+        </div>
+
+        <div class="sidebar-divider"></div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-section-header">
+            <span class="sidebar-section-title">Stats</span>
+          </div>
+          <div class="stats-grid" id="statsGrid">
+            <div class="stat-item">
+              <span class="stat-label">Dimension</span>
+              <span class="stat-value" id="statDim">—</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Total</span>
+              <span class="stat-value" id="statTotal">—</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Capacity</span>
+              <span class="stat-value" id="statCapacity">—</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <main id="content">
+        <div id="view-browser" class="view active">
+          <div class="view-toolbar">
+            <div class="search-bar">
+              <i class="ph ph-magnifying-glass search-icon"></i>
+              <input type="text" id="searchInput" placeholder="Search memories..." autocomplete="off">
+              <div class="search-mode-toggle">
+                <button class="toggle-btn active" data-mode="semantic" title="Semantic search">S</button>
+                <button class="toggle-btn" data-mode="keyword" title="Keyword filter">K</button>
+              </div>
+            </div>
+            <button class="btn btn-primary" id="btnAddMemory">
+              <i class="ph ph-plus"></i> Add Memory
+            </button>
+          </div>
+
+          <div id="browserWarnings"></div>
+
+          <div id="browserContent">
+            <div class="empty-state" id="emptyState">
+              <div class="empty-icon"><i class="ph ph-database"></i></div>
+              <h3>No memories yet</h3>
+              <p>Add your first memory to start building your semantic store.</p>
+              <button class="btn btn-primary" id="btnEmptyAdd">
+                <i class="ph ph-plus"></i> Add Memory
+              </button>
+            </div>
+
+            <div class="loading-state" id="loadingState">
+              <div class="skeleton-table">
+                <div class="skeleton-row"><div class="skeleton-cell" style="width:5%"></div><div class="skeleton-cell" style="width:40%"></div><div class="skeleton-cell" style="width:15%"></div><div class="skeleton-cell" style="width:12%"></div><div class="skeleton-cell" style="width:18%"></div><div class="skeleton-cell" style="width:10%"></div></div>
+                <div class="skeleton-row"><div class="skeleton-cell" style="width:5%"></div><div class="skeleton-cell" style="width:40%"></div><div class="skeleton-cell" style="width:15%"></div><div class="skeleton-cell" style="width:12%"></div><div class="skeleton-cell" style="width:18%"></div><div class="skeleton-cell" style="width:10%"></div></div>
+                <div class="skeleton-row"><div class="skeleton-cell" style="width:5%"></div><div class="skeleton-cell" style="width:40%"></div><div class="skeleton-cell" style="width:15%"></div><div class="skeleton-cell" style="width:12%"></div><div class="skeleton-cell" style="width:18%"></div><div class="skeleton-cell" style="width:10%"></div></div>
+                <div class="skeleton-row"><div class="skeleton-cell" style="width:5%"></div><div class="skeleton-cell" style="width:40%"></div><div class="skeleton-cell" style="width:15%"></div><div class="skeleton-cell" style="width:12%"></div><div class="skeleton-cell" style="width:18%"></div><div class="skeleton-cell" style="width:10%"></div></div>
+              </div>
+            </div>
+
+            <div class="error-banner hidden" id="errorBanner">
+              <span id="errorMessage"></span>
+              <button class="btn btn-sm" id="errorRetry">Retry</button>
+            </div>
+
+            <div class="table-container hidden" id="tableContainer">
+              <table class="memory-table">
+                <thead>
+                  <tr>
+                    <th class="col-check"><input type="checkbox" id="selectAll"></th>
+                    <th class="col-text">Text</th>
+                    <th class="col-source">Source</th>
+                    <th class="col-importance">Importance</th>
+                    <th class="col-time">Timestamp</th>
+                    <th class="col-tags">Tags</th>
+                    <th class="col-actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="memoriesBody"></tbody>
+              </table>
+              <div class="pagination" id="pagination">
+                <button class="btn btn-sm" id="prevPage" disabled><i class="ph ph-caret-left"></i></button>
+                <span id="pageInfo">Page 1</span>
+                <button class="btn btn-sm" id="nextPage"><i class="ph ph-caret-right"></i></button>
+              </div>
+            </div>
+
+            <div class="search-empty hidden" id="searchEmpty">
+              <div class="empty-icon"><i class="ph ph-file-x"></i></div>
+              <h3>No matches found</h3>
+              <p>Try a different query or adjust filters.</p>
+            </div>
+          </div>
+        </div>
+
+        <div id="view-detail" class="view">
+          <div class="detail-header">
+            <button class="btn btn-ghost" id="btnBackToList">
+              <i class="ph ph-arrow-left"></i> Back
+            </button>
+            <span class="detail-id" id="detailId"></span>
+          </div>
+
+          <div class="detail-body">
+            <div class="detail-loading">
+              <div class="skeleton-line" style="width:100%;height:120px"></div>
+              <div class="skeleton-line" style="width:60%;height:20px;margin-top:16px"></div>
+              <div class="skeleton-line" style="width:40%;height:20px;margin-top:8px"></div>
+            </div>
+
+            <div class="detail-content hidden" id="detailContent">
+              <div class="detail-section">
+                <label class="detail-label">Text</label>
+                <textarea class="detail-textarea" id="detailText" rows="4"></textarea>
+              </div>
+
+              <div class="detail-grid">
+                <div class="detail-section">
+                  <label class="detail-label">Source</label>
+                  <input type="text" class="detail-input" id="detailSource">
+                </div>
+                <div class="detail-section">
+                  <label class="detail-label">Importance</label>
+                  <div class="slider-group">
+                    <input type="range" class="slider" id="detailImportance" min="0" max="1" step="0.05">
+                    <span class="slider-value" id="detailImportanceVal">0.5</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="detail-section">
+                <label class="detail-label">Tags</label>
+                <input type="text" class="detail-input" id="detailTags" placeholder="tag1, tag2, tag3">
+              </div>
+
+              <div class="detail-section">
+                <label class="detail-label">Embedding <span class="detail-embedding-dim" id="detailEmbeddingDim"></span></label>
+                <code class="detail-embedding" id="detailEmbedding"></code>
+                <button class="btn btn-sm btn-ghost" id="copyEmbedding">Copy</button>
+              </div>
+
+              <div class="detail-section detail-meta">
+                <span class="detail-meta-item" id="detailAccessCount"></span>
+                <span class="detail-meta-item" id="detailTimestamp"></span>
+              </div>
+
+              <div class="detail-actions">
+                <button class="btn btn-primary" id="btnSaveMemory"><i class="ph ph-floppy-disk"></i> Save</button>
+                <button class="btn btn-danger" id="btnDeleteMemory"><i class="ph ph-trash"></i> Delete</button>
+                <div class="delete-confirm hidden" id="deleteConfirm">
+                  <span>Are you sure?</span>
+                  <button class="btn btn-danger btn-sm" id="confirmDelete">Yes, delete</button>
+                  <button class="btn btn-sm btn-ghost" id="cancelDelete">Cancel</button>
+                </div>
+              </div>
+
+              <div class="detail-section">
+                <label class="detail-label">Similar Memories</label>
+                <div id="similarMemories" class="similar-list">
+                  <div class="text-secondary">Searching...</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="view-config" class="view">
+          <div class="config-header">
+            <h2>Configuration</h2>
+          </div>
+          <div class="config-loading">
+            <div class="skeleton-line" style="width:80%;height:24px"></div>
+            <div class="skeleton-line" style="width:60%;height:24px;margin-top:12px"></div>
+            <div class="skeleton-line" style="width:70%;height:24px;margin-top:12px"></div>
+          </div>
+          <div class="config-content hidden" id="configContent">
+            <div class="config-section">
+              <h3 class="config-section-title">Embedder</h3>
+              <div class="config-grid">
+                <div class="config-field">
+                  <label>Model Name</label>
+                  <input type="text" id="cfgModelName" class="config-input">
+                </div>
+                <div class="config-field">
+                  <label>Dimension</label>
+                  <input type="text" id="cfgDimension" class="config-input" disabled>
+                </div>
+              </div>
+            </div>
+
+            <div class="config-section">
+              <h3 class="config-section-title">Store</h3>
+              <div class="config-grid">
+                <div class="config-field">
+                  <label>Capacity</label>
+                  <input type="number" id="cfgCapacity" class="config-input">
+                </div>
+                <div class="config-field">
+                  <label>Prune Strategy</label>
+                  <select id="cfgStrategy" class="config-select">
+                    <option value="hybrid">Hybrid</option>
+                    <option value="by_age">By Age</option>
+                    <option value="by_importance">By Importance</option>
+                    <option value="by_access_frequency">By Access Frequency</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="config-section">
+              <h3 class="config-section-title">Retriever</h3>
+              <div class="config-grid">
+                <div class="config-field">
+                  <label>Hybrid Alpha (semantic weight)</label>
+                  <div class="slider-group">
+                    <input type="range" class="slider" id="cfgAlpha" min="0" max="1" step="0.05">
+                    <span class="slider-value" id="cfgAlphaVal">0.5</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="config-section">
+              <h3 class="config-section-title">Consolidator</h3>
+              <div class="config-grid">
+                <div class="config-field">
+                  <label>Max Memories</label>
+                  <input type="number" id="cfgMaxMemories" class="config-input">
+                </div>
+                <div class="config-field">
+                  <label>Min Importance</label>
+                  <input type="number" id="cfgMinImportance" class="config-input" step="0.05" min="0" max="1">
+                </div>
+              </div>
+            </div>
+
+            <div class="config-save">
+              <button class="btn btn-primary" id="btnSaveConfig"><i class="ph ph-floppy-disk"></i> Save Config</button>
+              <button class="btn btn-ghost" id="btnPrune"><i class="ph ph-broom"></i> Prune Now</button>
+            </div>
+
+            <div class="config-section">
+              <h3 class="config-section-title">Import / Export</h3>
+              <div class="config-io">
+                <button class="btn btn-ghost" id="btnExport"><i class="ph ph-download"></i> Export JSON</button>
+                <label class="btn btn-ghost" id="btnImportLabel">
+                  <i class="ph ph-upload"></i> Import JSON
+                  <input type="file" id="btnImport" accept=".json" hidden>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <footer id="statusbar">
+      <div class="status-left">
+        <span class="status-indicator" id="statusDot"></span>
+        <span id="statusText">Online</span>
+      </div>
+      <div class="status-right">
+        <span id="statusPath"></span>
+        <span class="status-version">v0.1.0</span>
+      </div>
+    </footer>
+
+    <div class="modal-overlay hidden" id="addModal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>New Memory</h3>
+          <button class="btn btn-ghost modal-close" id="modalClose"><i class="ph ph-x"></i></button>
+        </div>
+        <div class="modal-body">
+          <div class="detail-section">
+            <label class="detail-label">Text</label>
+            <textarea class="detail-textarea" id="modalText" rows="4" placeholder="Enter memory text..."></textarea>
+          </div>
+          <div class="detail-grid">
+            <div class="detail-section">
+              <label class="detail-label">Source</label>
+              <input type="text" class="detail-input" id="modalSource" placeholder="manual">
+            </div>
+            <div class="detail-section">
+              <label class="detail-label">Importance</label>
+              <div class="slider-group">
+                <input type="range" class="slider" id="modalImportance" min="0" max="1" step="0.05">
+                <span class="slider-value" id="modalImportanceVal">0.5</span>
+              </div>
+            </div>
+          </div>
+          <div class="detail-section">
+            <label class="detail-label">Tags</label>
+            <input type="text" class="detail-input" id="modalTags" placeholder="tag1, tag2, tag3">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary" id="modalSave"><i class="ph ph-plus"></i> Create</button>
+          <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
