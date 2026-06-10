@@ -23,5 +23,9 @@ data/
 *.pkl
 *.pickle
 
+# Files to exclude from repo
+SECURITY_AUDIT.md
+demo_real.py
+
 # Environment
 .env
