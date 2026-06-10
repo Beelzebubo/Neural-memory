@@ -52,12 +52,111 @@ There's a FastAPI server at `ui/app.py` with a dark-themed SPA. Lets you browse,
 python -m uvicorn ui.app:app --host 127.0.0.1 --port 8210
 ```
 
-## Hermes Agent Integration
+## Agent Integration
 
-Two ways to hook it into Hermes:
+The project works with any coding agent. You have three options depending on what your agent supports.
 
-1. **MemoryPlugin** (`integration/hermes_plugin.py`) — Python API with 7 methods. Import it directly into your agent code.
-2. **MCP server** (`integration/mcp_server.py`) — stdio JSON-RPC server that exposes 7 tools over the Model Context Protocol. Register with `hermes mcp add`.
+### Option 1: MCP (Model Context Protocol) — works with most agents
+
+The MCP server (`integration/mcp_server.py`) exposes 7 tools — `neural_memory_store`, `neural_memory_search`, `neural_memory_list`, `neural_memory_get`, `neural_memory_delete`, `neural_memory_stats`, `neural_memory_prune` — over stdio JSON-RPC. Any agent that supports MCP can use them.
+
+**Hermes Agent**
+```bash
+hermes mcp add neural-memory --command "python3 /path/to/neural-memory/integration/mcp_server.py"
+```
+
+**Claude Code** — add to `~/.claude/.mcp.json`:
+```json
+{
+  "mcpServers": {
+    "neural-memory": {
+      "command": "python3",
+      "args": ["/path/to/neural-memory/integration/mcp_server.py"]
+    }
+  }
+}
+```
+
+**Cline / Roo Code / Continue** — add to the agent's MCP config:
+```json
+{
+  "mcpServers": {
+    "neural-memory": {
+      "command": "python3",
+      "args": ["/path/to/neural-memory/integration/mcp_server.py"]
+    }
+  }
+}
+```
+
+**Aider** — add to `.aider.mcp.json`:
+```json
+{
+  "mcpServers": {
+    "neural-memory": {
+      "command": "python3",
+      "args": ["/path/to/neural-memory/integration/mcp_server.py"]
+    }
+  }
+}
+```
+
+### Option 2: REST API — works with any agent that has HTTP tools
+
+The web UI doubles as a REST API. Start the server:
+
+```bash
+python -m uvicorn ui.app:app --host 127.0.0.1 --port 8210
+```
+
+Then agents can call it directly:
+
+```bash
+# Store a memory
+curl -X POST http://localhost:8210/api/store \
+  -H "Content-Type: application/json" \
+  -d '{"text": "User prefers dark mode", "source": "conversation", "importance": 0.8}'
+
+# Search
+curl "http://localhost:8210/api/search?q=dark+mode&k=5"
+
+# List all
+curl "http://localhost:8210/api/list?limit=50"
+
+# Stats
+curl "http://localhost:8210/api/stats"
+```
+
+This works with **Codex CLI**, **GitHub Copilot**, **OpenAI functions**, or any agent that can make HTTP requests.
+
+### Option 3: Direct Python import — works everywhere
+
+The core library is pure Python with no agent dependencies. Any agent running Python code can use it:
+
+```python
+from src import TextEmbedder, VectorMemoryStore, MemoryRetriever
+
+embedder = TextEmbedder()
+store = VectorMemoryStore()
+store.load("data/memory_store.pkl")
+
+# Search across sessions
+query_emb = embedder.embed("What does the user like?")
+results = store.search(query_emb, k=5)
+for r in results:
+    print(f"{r['id']} (score: {r['score']:.3f}): {r['metadata'].get('text', '')}")
+```
+
+### Option 4: CLI tool — works in any shell
+
+There's a standalone CLI at `integration/cli.py`:
+
+```bash
+python integration/cli.py store "User prefers dark mode" --source conversation
+python integration/cli.py search "dark mode" -k 5
+python integration/cli.py list --source conversation
+python integration/cli.py stats
+```
 
 ## Project Structure
 
