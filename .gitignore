@@ -27,5 +27,8 @@ data/
 SECURITY_AUDIT.md
 demo_real.py
 
+# OpenCode config
+.opencode/
+
 # Environment
 .env
