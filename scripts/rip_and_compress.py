@@ -21,7 +21,7 @@ import argparse
 from pathlib import Path
 from datetime import datetime, timezone
 
-NEURAL_DIR = os.path.expanduser("~/Documents/neural-memory")
+NEURAL_DIR = os.path.expanduser("~/Documents/Lino")
 sys.path.insert(0, NEURAL_DIR)
 
 from src import TextEmbedder, VectorMemoryStore
