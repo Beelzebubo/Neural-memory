@@ -1,34 +1,57 @@
+# Lino — Neural Memory Server
+
 # Python
 __pycache__/
 *.py[cod]
 *.egg-info/
 dist/
 build/
-
-# Virtual env
+*.egg
 .venv/
 venv/
+env/
 
-# IDE
-.vscode/
-.idea/
+# Data & persistence
+data/*.pkl
+data/*.index
+data/*.npy
+data/embeddings/
+
+# Logs
+logs/
+*.log
+
+# Environment
+.env
+!/.env.example
 
 # OS
 .DS_Store
 Thumbs.db
+*.swp
+*.swo
+*~
 
-# Neural-memory local
-logs/
-data/
-*.pkl
-*.pickle
-
-# Files to exclude from repo
-SECURITY_AUDIT.md
-demo_real.py
-
-# OpenCode config
+# IDE
+.vscode/
+.idea/
+*.iml
 .opencode/
 
-# Environment
-.env
+# Secrets
+**/secrets/
+*.key
+*.pem
+*.crt
+
+# Docker
+.docker/
+
+# Backups
+backups/
+*.bak
+
+# Temp
+tmp/
+*.tmp
+.changes-patches/

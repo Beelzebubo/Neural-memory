@@ -268,6 +268,13 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-
   flex: 1;
 }
 
+.sidebar-item-priority {
+  flex-shrink: 0;
+  margin-right: 4px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+
 .sidebar-item-time {
   font-size: 11px;
   font-family: var(--font-mono);
@@ -875,25 +882,56 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-
   flex: 1;
   -webkit-appearance: none;
   appearance: none;
-  height: 4px;
-  border-radius: 2px;
+  height: 6px;
+  border-radius: 3px;
   background: var(--bg-hover);
   outline: none;
+  transition: background var(--transition-fast);
+}
+
+.slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(to right, var(--accent) var(--slider-pct, 50%), var(--bg-hover) var(--slider-pct, 50%));
 }
 
 .slider::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--accent);
   cursor: pointer;
-  border: 2px solid var(--bg-surface);
-  transition: transform var(--transition-fast);
+  border: 3px solid var(--bg-surface);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  box-shadow: 0 0 0 2px rgba(107, 163, 224, 0.3);
+  margin-top: -7px;
 }
 
 .slider::-webkit-slider-thumb:hover {
-  transform: scale(1.15);
+  transform: scale(1.2);
+  box-shadow: 0 0 0 4px rgba(107, 163, 224, 0.4);
+}
+
+.slider::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-hover);
+}
+
+.slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: 3px solid var(--bg-surface);
+}
+
+.slider::-moz-range-progress {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--accent);
 }
 
 .slider-value {
@@ -902,6 +940,15 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-
   font-family: var(--font-mono);
   font-size: 13px;
   color: var(--text-secondary);
+}
+
+.priority-save-indicator {
+  min-width: 56px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  transition: color var(--transition-fast);
 }
 
 .detail-embedding {

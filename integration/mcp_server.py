@@ -132,6 +132,53 @@ def handle_request(req: dict) -> dict:
                     },
                 },
             },
+            {
+                "name": "neural_memory_update_priority",
+                "description": "Update a memory's importance/priority score in-place without re-embedding",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "memory_id": {"type": "string", "description": "Memory ID to update"},
+                        "priority": {"type": "number", "description": "New priority value 0.0-1.0"},
+                    },
+                    "required": ["memory_id", "priority"],
+                },
+            },
+            {
+                "name": "neural_memory_run_sync",
+                "description": "Run an immediate vault-to-neural-memory sync with optional wikilink generation",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "no_link": {"type": "boolean", "description": "Skip wikilink generation (default: false)"},
+                        "max_related": {"type": "number", "description": "Max related memories per entry (default: 5)"},
+                    },
+                },
+            },
+            {
+                "name": "neural_memory_run_compress",
+                "description": "Run the priority-tier rip-and-compress pipeline on transient/low-priority memories",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "dry_run": {"type": "boolean", "description": "Show what would be compressed without doing it (default: false)"},
+                        "min_age": {"type": "number", "description": "Minimum age in hours (default: 24)"},
+                        "provider": {"type": "string", "description": "LLM provider: groq, openai, anthropic (default: groq)"},
+                        "model": {"type": "string", "description": "LLM model name (default: gemini-2.5-flash)"},
+                    },
+                },
+            },
+            {
+                "name": "neural_memory_watchdog",
+                "description": "Manage the real-time vault file watcher daemon (start/stop/status)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "action": {"type": "string", "description": "Action: start, stop, or status"},
+                    },
+                    "required": ["action"],
+                },
+            },
         ]
         return {"jsonrpc": "2.0", "id": req_id, "result": {"tools": tools}}
 

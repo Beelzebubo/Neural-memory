@@ -16,27 +16,53 @@ def main():
     parser.add_argument("--store-path", help="Path to the memory store pickle file")
     sub = parser.add_subparsers(dest="command", required=True)
 
+    # store
     p_store = sub.add_parser("store", help="Store a new memory")
     p_store.add_argument("text", help="Memory text to store")
     p_store.add_argument("--source", default="cli", help="Source tag")
     p_store.add_argument("--importance", type=float, default=0.5, help="Importance 0.0-1.0")
     p_store.add_argument("--tags", nargs="*", default=[], help="Tags")
 
+    # search
     p_search = sub.add_parser("search", help="Semantic search")
     p_search.add_argument("query", help="Search query")
     p_search.add_argument("-k", type=int, default=5, help="Number of results")
     p_search.add_argument("--threshold", type=float, default=0.0, help="Similarity threshold")
 
+    # get
     p_get = sub.add_parser("get", help="Get memory by ID")
     p_get.add_argument("id", help="Memory ID")
 
+    # list
     p_list = sub.add_parser("list", help="List memories")
     p_list.add_argument("--source", help="Filter by source")
     p_list.add_argument("--tags", nargs="*", default=[], help="Filter by tags")
     p_list.add_argument("--limit", type=int, default=50, help="Max results")
     p_list.add_argument("--offset", type=int, default=0, help="Pagination offset")
 
+    # stats
     sub.add_parser("stats", help="System statistics")
+
+    # priority-update
+    p_pri = sub.add_parser("priority-update", help="Update a memory's importance/priority score")
+    p_pri.add_argument("memory_id", help="Memory ID to update")
+    p_pri.add_argument("--priority", type=float, required=True, help="New priority 0.0-1.0")
+
+    # sync
+    p_sync = sub.add_parser("sync", help="Run vault-to-neural-memory sync")
+    p_sync.add_argument("--no-link", action="store_true", help="Skip wikilink generation")
+    p_sync.add_argument("--max-related", type=int, default=5, help="Max related memories per entry")
+
+    # compress
+    p_comp = sub.add_parser("compress", help="Run rip-and-compress pipeline")
+    p_comp.add_argument("--dry-run", action="store_true", help="Show what would be compressed without doing it")
+    p_comp.add_argument("--min-age", type=int, default=24, help="Minimum age in hours")
+    p_comp.add_argument("--provider", default="groq", help="LLM provider (groq, openai, anthropic)")
+    p_comp.add_argument("--model", default="gemini-2.5-flash", help="LLM model name")
+
+    # watchdog
+    p_watch = sub.add_parser("watchdog", help="Manage vault file watcher daemon")
+    p_watch.add_argument("action", choices=["start", "stop", "status"], help="Action")
 
     args = parser.parse_args()
     plugin = MemoryPlugin(store_path=args.store_path)
@@ -59,6 +85,27 @@ def main():
 
     elif args.command == "stats":
         result = plugin.cmd_stats()
+        print(json.dumps(result, indent=2))
+
+    elif args.command == "priority-update":
+        result = plugin.cmd_update_priority(args.memory_id, args.priority)
+        print(json.dumps(result, indent=2))
+
+    elif args.command == "sync":
+        result = plugin.cmd_run_sync(no_link=args.no_link, max_related=args.max_related)
+        print(json.dumps(result, indent=2))
+
+    elif args.command == "compress":
+        result = plugin.cmd_run_compress(
+            dry_run=args.dry_run,
+            min_age=args.min_age,
+            provider=args.provider,
+            model=args.model,
+        )
+        print(json.dumps(result, indent=2))
+
+    elif args.command == "watchdog":
+        result = plugin.cmd_watchdog(action=args.action)
         print(json.dumps(result, indent=2))
 
 

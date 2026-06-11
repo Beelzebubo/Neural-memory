@@ -219,6 +219,10 @@ class CreateMemoryRequest(BaseModel):
     tags: Optional[List[str]] = None
 
 
+class PriorityUpdateRequest(BaseModel):
+    priority: float = Field(..., ge=0.0, le=1.0)
+
+
 class UpdateMemoryRequest(BaseModel):
     text: Optional[str] = Field(None, max_length=100000)
     source: Optional[str] = None
@@ -303,6 +307,16 @@ async def update_memory(memory_id: str, req: UpdateMemoryRequest):
     if result is None:
         raise HTTPException(status_code=404, detail="Memory not found")
     return result
+
+
+@app.patch("/api/memories/{memory_id}/priority")
+async def update_priority(memory_id: str, req: PriorityUpdateRequest):
+    mem = memory_system.get_memory_by_id(memory_id)
+    if not mem:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    memory_system.store._metadata[memory_id]["importance_score"] = req.priority
+    memory_system.save_store()
+    return {"status": "updated", "priority": req.priority}
 
 
 @app.delete("/api/memories/{memory_id}")

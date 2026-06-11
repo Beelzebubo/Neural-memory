@@ -1,16 +1,11 @@
-consolidator:
-  max_memories: 5000
-  prune_strategy: importance
-embedder:
-  device: cpu
-  model_name: all-MiniLM-L6-v2
-logging:
-  file: logs/neural_memory.log
-  level: INFO
-retriever:
-  default_k: 10
-  hybrid_alpha: 0.5
-  min_score: 0.0
+# Lino — Server Configuration
+
+server:
+  host: 127.0.0.1
+  port: 8210
+  workers: 2
+  cors_origins: "*"
+
 store:
   backend: faiss
   index_type: flat_ip
@@ -18,3 +13,23 @@ store:
     auto_save: true
     save_interval: 50
     save_path: data/memory_store.pkl
+
+embedder:
+  model_name: all-MiniLM-L6-v2
+  device: cpu
+
+retriever:
+  default_k: 10
+  hybrid_alpha: 0.5
+  min_score: 0.0
+
+consolidator:
+  max_memories: 5000
+  prune_strategy: importance
+
+logging:
+  level: INFO
+  file: logs/lino.log
+
+vault:
+  sync_interval_hours: 6

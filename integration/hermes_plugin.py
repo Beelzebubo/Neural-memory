@@ -1,5 +1,6 @@
 import inspect
 import os
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -46,6 +47,37 @@ TOOL_SCHEMAS = {
     "neural_memory_stats": {
         "description": "Get neural memory system statistics.",
         "parameters": {},
+    },
+    "neural_memory_update_priority": {
+        "description": "Update a memory's importance/priority score in-place without re-embedding.",
+        "parameters": {
+            "memory_id": {"type": "string", "description": "Memory ID to update"},
+            "priority": {"type": "number", "description": "New priority value 0.0-1.0"},
+        },
+        "required": ["memory_id", "priority"],
+    },
+    "neural_memory_run_sync": {
+        "description": "Run an immediate vault-to-neural-memory sync with optional wikilink generation.",
+        "parameters": {
+            "no_link": {"type": "boolean", "description": "Skip wikilink generation (default: false)", "nullable": True},
+            "max_related": {"type": "integer", "description": "Max related memories per entry (default: 5)", "nullable": True},
+        },
+    },
+    "neural_memory_run_compress": {
+        "description": "Run the priority-tier rip-and-compress pipeline on transient/low-priority memories.",
+        "parameters": {
+            "dry_run": {"type": "boolean", "description": "Show what would be compressed without doing it (default: false)", "nullable": True},
+            "min_age": {"type": "integer", "description": "Minimum age in hours (default: 24)", "nullable": True},
+            "provider": {"type": "string", "description": "LLM provider: groq, openai, anthropic (default: groq)", "nullable": True},
+            "model": {"type": "string", "description": "LLM model name (default: gemini-2.5-flash)", "nullable": True},
+        },
+    },
+    "neural_memory_watchdog": {
+        "description": "Manage the real-time vault file watcher daemon (start/stop/status).",
+        "parameters": {
+            "action": {"type": "string", "description": "Action: start, stop, or status (default: status)"},
+        },
+        "required": ["action"],
     },
 }
 
@@ -219,3 +251,129 @@ class MemoryPlugin:
             "store_path": str(self.store_path),
             "status": "online" if self.embedder_online else "degraded",
         }
+
+    def cmd_update_priority(self, memory_id: str, priority: float) -> Dict[str, Any]:
+        """Update a memory's importance/priority score in-place without re-embedding."""
+        ids = self.store.list_all()
+        if memory_id not in ids:
+            return {"error": f"Memory not found: {memory_id}"}
+        priority = max(0.0, min(1.0, float(priority)))
+        self.store._metadata[memory_id]["importance_score"] = priority
+        self._save_store()
+        return {"status": "updated", "memory_id": memory_id, "priority": priority}
+
+    def cmd_run_sync(self, no_link: bool = False, max_related: int = 5) -> Dict[str, Any]:
+        """Run the vault-to-neural-memory sync script with optional wikilinks."""
+        import subprocess
+        sync_script = str(Path(__file__).resolve().parent.parent.parent / ".hermes" / "scripts" / "sync_vault_to_neural_memory.py")
+        if not os.path.exists(sync_script):
+            sync_script = str(Path.home() / ".hermes" / "scripts" / "sync_vault_to_neural_memory.py")
+        cmd = [sys.executable, sync_script]
+        if no_link:
+            cmd.append("--no-link")
+        if max_related != 5:
+            cmd.append(f"--max-related={max_related}")
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            return {
+                "status": "completed" if result.returncode == 0 else "failed",
+                "exit_code": result.returncode,
+                "output": result.stdout,
+                "errors": result.stderr or None,
+            }
+        except subprocess.TimeoutExpired:
+            return {"status": "timeout", "output": "Sync script exceeded 5-minute timeout"}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def cmd_run_compress(self, dry_run: bool = False, min_age: int = 24,
+                         provider: str = "groq", model: str = "gemini-2.5-flash") -> Dict[str, Any]:
+        """Run the priority-tier rip-and-compress pipeline."""
+        import subprocess
+        compress_script = str(Path(__file__).resolve().parent.parent / "scripts" / "rip_and_compress.py")
+        cmd = [sys.executable, compress_script]
+        if dry_run:
+            cmd.append("--dry-run")
+        if min_age != 24:
+            cmd.append(f"--min-age={min_age}")
+        if provider != "groq":
+            cmd.extend(["--provider", provider])
+        if model != "gemini-2.5-flash":
+            cmd.extend(["--model", model])
+        try:
+            env = os.environ.copy()
+            # Pass through provider API keys from the Hermes environment
+            for key_var in (f"{provider.upper()}_API_KEY", "GROQ_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
+                if key_var in env:
+                    break
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, env=env)
+            return {
+                "status": "completed" if result.returncode == 0 else "failed",
+                "exit_code": result.returncode,
+                "output": result.stdout,
+                "errors": result.stderr or None,
+            }
+        except subprocess.TimeoutExpired:
+            return {"status": "timeout", "output": "Compress script exceeded 5-minute timeout"}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def cmd_watchdog(self, action: str = "status") -> Dict[str, Any]:
+        """Manage the real-time vault file watcher daemon."""
+        import subprocess
+        pid_file = str(Path.home() / ".neural_memory" / "watchdog.pid")
+        watchdog_script = str(Path(__file__).resolve().parent.parent / "scripts" / "watchdog_sync.py")
+
+        if action == "start":
+            if os.path.exists(pid_file):
+                try:
+                    with open(pid_file) as f:
+                        pid = int(f.read().strip())
+                    os.kill(pid, 0)  # Check if alive
+                    return {"status": "already_running", "pid": pid}
+                except (OSError, ValueError):
+                    os.remove(pid_file)
+            # Start the watchdog
+            try:
+                proc = subprocess.Popen(
+                    [sys.executable, watchdog_script],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    stdin=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+                Path(pid_file).parent.mkdir(parents=True, exist_ok=True)
+                with open(pid_file, "w") as f:
+                    f.write(str(proc.pid))
+                return {"status": "started", "pid": proc.pid}
+            except Exception as e:
+                return {"status": "error", "error": str(e)}
+
+        elif action == "stop":
+            if not os.path.exists(pid_file):
+                return {"status": "not_running"}
+            try:
+                with open(pid_file) as f:
+                    pid = int(f.read().strip())
+                os.kill(pid, 15)  # SIGTERM
+                os.remove(pid_file)
+                return {"status": "stopped", "pid": pid}
+            except ProcessLookupError:
+                os.remove(pid_file)
+                return {"status": "stopped", "pid": None, "note": "Process was already dead"}
+            except Exception as e:
+                return {"status": "error", "error": str(e)}
+
+        else:  # status
+            if not os.path.exists(pid_file):
+                return {"status": "stopped"}
+            try:
+                with open(pid_file) as f:
+                    pid = int(f.read().strip())
+                os.kill(pid, 0)
+                return {"status": "running", "pid": pid}
+            except (OSError, ValueError):
+                if os.path.exists(pid_file):
+                    os.remove(pid_file)
+                return {"status": "stopped", "note": "Stale PID file cleaned up"}
+            return {"status": "stopped"}

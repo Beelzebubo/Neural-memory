@@ -30,6 +30,7 @@
   function getApi(path) { return api('GET', path); }
   function postApi(path, body) { return api('POST', path, body); }
   function putApi(path, body) { return api('PUT', path, body); }
+  function patchApi(path, body) { return api('PATCH', path, body); }
   function delApi(path) { return api('DELETE', path); }
 
   // ── State ──
@@ -159,9 +160,11 @@
     }
     list.innerHTML = items.map(m => {
       const active = m.id === currentMemoryId ? ' active' : '';
+      const imp = typeof m.metadata?.importance_score === 'number' ? m.metadata.importance_score : 0.5;
       return `<div class="sidebar-item${active}" data-id="${escapeHtml(m.id)}">
         <span class="sidebar-item-icon"><i class="ph ph-file-text"></i></span>
         <span class="sidebar-item-text">${escapeHtml(truncate(m.text || m.id, 30))}</span>
+        <span class="sidebar-item-priority" data-id="${escapeHtml(m.id)}">${fmtImportance(imp)}</span>
         <span class="sidebar-item-time">${fmtTime(m.metadata?.timestamp)}</span>
       </div>`;
     }).join('');
@@ -578,12 +581,62 @@
   document.getElementById('modalCancel').addEventListener('click', closeModal);
   modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
 
+  function updateSliderFill(slider) {
+    const pct = ((parseFloat(slider.value) - parseFloat(slider.min)) / (parseFloat(slider.max) - parseFloat(slider.min))) * 100;
+    slider.style.setProperty('--slider-pct', pct + '%');
+  }
+
   document.getElementById('modalImportance').addEventListener('input', function () {
     document.getElementById('modalImportanceVal').textContent = parseFloat(this.value).toFixed(2);
+    updateSliderFill(this);
   });
+
   document.getElementById('detailImportance').addEventListener('input', function () {
     document.getElementById('detailImportanceVal').textContent = parseFloat(this.value).toFixed(2);
+    updateSliderFill(this);
   });
+
+  // Priority auto-save
+  let prioritySaveTimer = null;
+  let previousPriority = null;
+  document.getElementById('detailImportance').addEventListener('change', function () {
+    const slider = this;
+    const newVal = parseFloat(slider.value);
+    if (previousPriority === null) {
+      previousPriority = parseFloat(document.getElementById('detailImportanceVal').textContent) || 0.5;
+    }
+    clearTimeout(prioritySaveTimer);
+    prioritySaveTimer = setTimeout(() => savePriority(slider, newVal), 500);
+  });
+
+  async function savePriority(slider, newVal) {
+    let indicator = document.querySelector('.priority-save-indicator');
+    if (!indicator) {
+      indicator = document.createElement('span');
+      indicator.className = 'priority-save-indicator';
+      slider.parentNode.appendChild(indicator);
+    }
+    indicator.textContent = 'saving…';
+    try {
+      await patchApi(`/memories/${state.currentDetail.id}/priority`, { priority: newVal });
+      indicator.textContent = '✓ saved';
+      previousPriority = newVal;
+      setTimeout(() => { indicator.textContent = ''; }, 2000);
+
+      // Update sidebar entry
+      const sidebarBadge = document.querySelector(`.sidebar-item-priority[data-id="${state.currentDetail.id}"]`);
+      if (sidebarBadge) sidebarBadge.innerHTML = fmtImportance(newVal);
+
+      // Update table row if visible
+      const tableRow = document.querySelector(`tr[data-id="${state.currentDetail.id}"] .col-importance`);
+      if (tableRow) tableRow.innerHTML = fmtImportance(newVal);
+    } catch (e) {
+      indicator.textContent = '✗ failed';
+      slider.value = previousPriority;
+      document.getElementById('detailImportanceVal').textContent = previousPriority.toFixed(2);
+      setTimeout(() => { indicator.textContent = ''; }, 3000);
+    }
+  }
   document.getElementById('cfgAlpha').addEventListener('input', function () {
     document.getElementById('cfgAlphaVal').textContent = parseFloat(this.value).toFixed(2);
   });

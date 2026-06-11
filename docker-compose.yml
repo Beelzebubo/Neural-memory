@@ -1,0 +1,35 @@
+version: "3.9"
+
+services:
+  lino:
+    build: .
+    container_name: lino
+    restart: unless-stopped
+    ports:
+      - "${LINO_PORT:-8210}:8210"
+    volumes:
+      - lino_data:/data
+      - lino_logs:/logs
+      - ./config:/app/config:ro
+      - ${OBSIDIAN_VAULT_PATH:-./vault}:/vault:ro
+    environment:
+      - STORE_PATH=/data/memory_store.pkl
+      - LOG_FILE=/logs/lino.log
+      - EMBEDDER_MODEL=${EMBEDDER_MODEL:-all-MiniLM-L6-v2}
+      - RETRIEVER_DEFAULT_K=${RETRIEVER_DEFAULT_K:-10}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8210/ui/')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - lino_net
+
+volumes:
+  lino_data:
+  lino_logs:
+
+networks:
+  lino_net:

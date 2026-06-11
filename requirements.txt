@@ -1,10 +1,25 @@
-sentence-transformers>=2.2.0
-numpy>=1.21.0
-faiss-cpu>=1.7.0        # optional — falls back to numpy if missing
-PyYAML>=6.0
-pytest>=7.0.0
-fastapi>=0.104.0
-uvicorn[standard]>=0.24.0
-jinja2>=3.1.2
-python-multipart>=0.0.6
-tqdm>=4.64.0
+# Lino — Pinned Dependencies
+# Upgraded 2026-06-11
+# Run: pip install -r requirements.txt
+
+# Core ML
+sentence-transformers==5.5.1
+numpy==2.4.6
+faiss-cpu==1.14.2          # optional — falls back to numpy if missing
+
+# Server
+fastapi==0.136.3
+uvicorn[standard]==0.49.0
+starlette==1.3.0
+python-multipart==0.0.32
+
+# Data & templates
+PyYAML==6.0.3
+jinja2==3.1.6
+tqdm==4.68.2
+
+# Validation
+pydantic==2.13.4
+
+# Dev/testing
+pytest==9.0.3
