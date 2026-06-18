@@ -1,268 +1,345 @@
 # Lino — Neural Memory Server
 
-A self-hosted semantic memory server. Turns notes, conversations, and knowledge into persistent, searchable vector embeddings — accessible through a web UI, REST API, MCP tools, and CLI.
+A self-hosted semantic memory backend. Turns notes, conversations, and knowledge into persistent, searchable vector embeddings — accessible through a web UI, REST API, MCP tools, and CLI.
 
-## What it does
-
-Four layers that stack together:
-
-- **Embedder** — Runs text through Sentence Transformers (384-d, normalized) and gives you vectors back.
-- **Store** — Keeps those vectors in a FAISS index (or plain numpy if you don't have FAISS), saves to pickle.
-- **Retriever** — Finds what's relevant: straight semantic search or a hybrid that mixes semantic with keyword overlap.
-- **Consolidator** — Finds similar entries by cosine similarity, merges them, prunes stale ones by age, importance, or access count.
+```
+                    ┌──────────────────────┐
+                    │   Web UI (Dark SPA)   │
+                    │   D3 Knowledge Graph  │
+                    └──────────┬───────────┘
+                               │ HTTP
+                    ┌──────────▼───────────┐
+                    │   FastAPI Server      │  ~30 REST endpoints
+                    │   Rate Limited        │  api key auth, CORS
+                    └──────────┬───────────┘
+                               │
+          ┌────────────────────┼────────────────────┐
+          │                    │                    │
+   Hermes MCP Tools     Direct Python Import     CLI
+   (17 tools)           (src/)                   (10 commands)
+                               │
+                    ┌──────────▼───────────┐
+                    │   MemorySystem        │
+                    │   auto-link + wikilink│
+                    │   synthesis (RAG Q&A) │
+                    │   knowledge graph BFS │
+                    │   session management  │
+                    │   preference learning │
+                    └──────────┬───────────┘
+                               │
+         ┌─────────────────────┼─────────────────────┐
+         │                     │                     │
+  TextEmbedder         VectorMemoryStore      MemoryRetriever
+  (384-d, norm'd)      FAISS / numpy          semantic + hybrid
+         │                pickle persist      metadata filter
+         └────────────────────┬─────────────────────┘
+                              │
+                    ┌─────────▼──────────┐
+                    │ MemoryConsolidator  │
+                    │ cluster / merge     │
+                    │ prune (4 strategies)│
+                    │ link cleanup        │
+                    └────────────────────┘
+```
 
 ## Quick Start
 
 ```bash
 pip install -r requirements.txt
-cd scripts
 
 # Dev mode (hot reload)
-./start.sh dev
-# or: python -m uvicorn ui.app:app --host 127.0.0.1 --port 8210 --reload
+cd scripts && ./start.sh dev
 
-# Seed from Obsidian vault
-./seed.sh
-
-# Backup
-./backup.sh
+# Or manually:
+python -m uvicorn ui.app:app --host 127.0.0.1 --port 8210 --reload
 ```
 
-## Web UI
+Open [http://127.0.0.1:8210/ui/](http://127.0.0.1:8210/ui/) in a browser.
 
-FastAPI server at `ui/app.py` with a dark-themed SPA. Browse, search, filter, create, delete, back up, prune memories, and **adjust priority sliders** with auto-save debounce.
+## Features
 
-```bash
-python -m uvicorn ui.app:app --host 127.0.0.1 --port 8210
-```
+### Semantic Memory
 
-## New Features
-
-### Priority Slider (Web UI)
-Each memory in the web UI has a priority slider (0.0–1.0). Drag to adjust importance — changes auto-save after 500ms debounce with a save indicator. No re-embedding needed; only metadata updates.
-
-### Real-Time Vault Watchdog
-Monitors your Obsidian vault for Markdown changes and syncs them to the vector store automatically:
-
-```bash
-python scripts/watchdog_sync.py        # Start in foreground
-python integration/cli.py watchdog start  # Start as daemon
-python integration/cli.py watchdog status
-python integration/cli.py watchdog stop
-```
-
-### Rip & Compress Pipeline
-Background cron job that compresses transient/low-priority memories via LLM:
-
-```bash
-python scripts/rip_and_compress.py --dry-run          # Preview only
-python integration/cli.py compress --dry-run
-python integration/cli.py compress --min-age 48 --provider groq
-```
-
-### Vault Sync with Wikilinks
-One-way vault→neural-memory sync that generates Obsidian wikilinks (`[[memory_id]]`) in YAML frontmatter:
-
-```bash
-python integration/cli.py sync
-python integration/cli.py sync --no-link              # Skip wikilink gen
-```
-
-## Using it from code
-
-```python
-from src import TextEmbedder, VectorMemoryStore, MemoryRetriever, MemoryConsolidator
-
-embedder = TextEmbedder()
-store = VectorMemoryStore()
-
-# Store a memory
-emb = embedder.embed("The user prefers dark mode.")
-store.store("mem_001", emb, {"source": "conversation", "importance_score": 0.8})
-
-# Retrieve relevant memories
-retriever = MemoryRetriever(embedder, store)
-results = retriever.retrieve("What theme do they like?", k=5)
-
-# Clean up
-consolidator = MemoryConsolidator()
-consolidator.prune(store, max_size=10000, strategy="hybrid")
-
-# Save and reload
-store.save("data/memory_store.pkl")
-store.load("data/memory_store.pkl")
-```
-
-## Agent Integration
-
-This project works with any coding agent via MCP, REST API, direct Python, or CLI.
-
-### Option 1: MCP — works with most agents
-
-The MCP server (`integration/mcp_server.py`) exposes **11 tools**: `neural_memory_store`, `neural_memory_search`, `neural_memory_list`, `neural_memory_get`, `neural_memory_delete`, `neural_memory_stats`, `neural_memory_prune`, `neural_memory_update_priority`, `neural_memory_run_sync`, `neural_memory_run_compress`, `neural_memory_watchdog` — over stdio JSON-RPC.
-
-**Hermes Agent**
-```bash
-hermes mcp add lino --command "python3 /path/to/lino/integration/mcp_server.py"
-```
-
-**Claude Code** — add to `~/.claude/.mcp.json`:
-```json
-{
-  "mcpServers": {
-    "lino": {
-      "command": "python3",
-      "args": ["/path/to/lino/integration/mcp_server.py"]
-    }
-  }
-}
-```
-
-**Cline / Roo Code / Continue** — add to the agent's MCP config:
-```json
-{
-  "mcpServers": {
-    "lino": {
-      "command": "python3",
-      "args": ["/path/to/lino/integration/mcp_server.py"]
-    }
-  }
-}
-```
-
-**Aider** — add to `.aider.mcp.json`:
-```json
-{
-  "mcpServers": {
-    "lino": {
-      "command": "python3",
-      "args": ["/path/to/lino/integration/mcp_server.py"]
-    }
-  }
-}
-```
-
-### Option 2: REST API — works with any agent that has HTTP tools
-
-The web UI doubles as a REST API. Start the server:
-
-```bash
-python -m uvicorn ui.app:app --host 127.0.0.1 --port 8210
-```
-
-Then agents can call it directly:
-
-```bash
-# Store a memory
-curl -X POST http://localhost:8210/api/store \
-  -H "Content-Type: application/json" \
-  -d '{"text": "User prefers dark mode", "source": "conversation", "importance": 0.8}'
-
-# Update priority
-curl -X PATCH http://localhost:8210/api/memories/memory_01/priority \
-  -H "Content-Type: application/json" \
-  -d '{"priority": 0.95}'
-
-# Search
-curl "http://localhost:8210/api/search?q=dark+mode&k=5"
-
-# List all
-curl "http://localhost:8210/api/list?limit=50"
-
-# Stats
-curl "http://localhost:8210/api/stats"
-```
-
-Works with **Codex CLI**, **GitHub Copilot**, **OpenAI functions**, or any agent that can make HTTP requests.
-
-### Option 3: Direct Python import — works everywhere
-
-The core library is pure Python with no agent dependencies:
+Store text → it's embedded as a 384-dimensional vector using Sentence Transformers. Search by meaning, not keywords.
 
 ```python
 from src import TextEmbedder, VectorMemoryStore, MemoryRetriever
 
 embedder = TextEmbedder()
 store = VectorMemoryStore()
-store.load("data/memory_store.pkl")
+retriever = MemoryRetriever(embedder, store)
 
-# Search across sessions
-query_emb = embedder.embed("What does the user like?")
-results = store.search(query_emb, k=5)
-for r in results:
-    print(f"{r['id']} (score: {r['score']:.3f}): {r['metadata'].get('text', '')}")
+emb = embedder.embed("The user prefers dark mode.")
+store.store("mem_001", emb, {"source": "conversation", "importance": 0.8})
+
+results = retriever.retrieve("What theme do they like?", k=5)
 ```
 
-### Option 4: CLI tool — works in any shell
+### Auto-Linking on Write
 
-Standalone CLI at `integration/cli.py`:
+Every new memory is automatically linked to:
+- The **profile node** (identity)
+- **Entity nodes** for `project:*` and `person:*` tags
+- **Wikilink targets** — bare `[[memory text]]` or typed `works at [[X]]`
+- **Semantic neighbors** — top-5 similar memories (cosine ≥ 0.25)
+
+Typed wikilinks recognized: `works at`, `employed by`, `part of`, `member of`, `founded`, `created`, `related to`, `connected to`, `mentions`.
+
+### Batch Relink (`POST /api/relink`)
+
+Re-scans all existing memories to re-establish wikilinks, typed links, and semantic links. Runs automatically on server startup.
+
+### Knowledge Graph
+
+Full bidirectional graph of all memories and their relationships.
+
+- `GET /api/graph` — all nodes and edges with typed relationship colors
+- `GET /api/graph/traverse?start_id=...&depth=3&types=works_at,founded` — BFS traversal
+- `GET /api/memories/{id}/backlinks` — incoming links to a memory
+
+The web UI renders an interactive D3.js force-directed graph with edge labels for typed links.
+
+### Synthesis (RAG Q&A)
+
+Ask questions and get answers sourced from your memories:
 
 ```bash
-python integration/cli.py store "User prefers dark mode" --source conversation
-python integration/cli.py search "dark mode" -k 5
-python integration/cli.py list --source conversation
+curl -X POST http://localhost:8210/api/synthesize \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What do I know about the user?", "k": 10}'
+```
+
+Returns answer text, numbered citations `[1]`, `[2]`, and knowledge gaps. Uses Groq `llama-3.3-70b-versatile` (requires `GROQ_API_KEY` in `.env`).
+
+### Session Management
+
+Active conversations are tracked as session memories. Log decisions, facts, changes in real-time:
+
+```bash
+# Log an entry
+curl -X POST http://localhost:8210/api/session/log \
+  -H "Content-Type: application/json" \
+  -d '{"type": "decision", "content": "Started Knowledge Graph feature", "tags": ["project:knowledge-graph"], "importance": 0.8}'
+
+# Close session with summary
+curl -X POST http://localhost:8210/api/session/close \
+  -H "Content-Type: application/json" \
+  -d '{"summary": "Implemented typed edges and BFS traversal"}'
+```
+
+Active sessions (`protected: True`) are never pruned. Closed sessions are eligible for nightly cleanup.
+
+### Preference Learning
+
+The system learns user preferences over time from observations:
+
+| Observation Type | Trigger | Threshold |
+|---|---|---|
+| `code_style` | User asks for code examples | 5 |
+| `answer_verbosity` | User asks for more/fewer details | 5 |
+| `skill_usage` | Same skill used repeatedly | 3 |
+| `explicit_preference` | Direct statement | 1 |
+
+Preferences consolidate into a profile identity document at `~/.neural_memory/lino-identity.md`.
+
+### Profile / Identity
+
+A special memory node (tagged `type:profile`) stores user identity: name, role, bio, learning goals, and locked preferences. Entity nodes are auto-created for `project:*` and `person:*` tags.
+
+### Web UI
+
+Dark-themed SPA with:
+- **Browse** — sort by newest or importance, filter by tags/source
+- **Detail panel** — full memory text, metadata, priority slider, related memories with relationship types, backlinks
+- **Knowledge graph** — interactive D3.js force-directed graph with edge labels and legend
+- **Create / edit / delete** memories
+- **Search** — semantic search with results grouped by score
+
+### Priority Slider
+
+Each memory has a drag-adjustable priority (0.0–1.0). Auto-saves after 500ms debounce with visual save indicator — no re-embedding needed.
+
+## REST API
+
+All ~30 endpoints:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/ui/` | Web UI SPA |
+| `GET` | `/api/memories` | List (limit, offset, sort=newest|importance) |
+| `GET` | `/api/memories/{id}` | Get by ID |
+| `POST` | `/api/memories` | Create (text, source, importance, tags) |
+| `PUT` | `/api/memories/{id}` | Update |
+| `PATCH` | `/api/memories/{id}/priority` | Update priority (fast, no re-embed) |
+| `DELETE` | `/api/memories/{id}` | Delete |
+| `POST` | `/api/relink` | Batch relink all memories |
+| `POST` | `/api/search` | Semantic search (query, k, threshold) |
+| `POST` | `/api/synthesize` | RAG Q&A with citations |
+| `POST` | `/api/filter` | Filter by source, tags, importance |
+| `GET` | `/api/graph` | Full knowledge graph |
+| `GET` | `/api/graph/traverse` | BFS traversal from node |
+| `GET` | `/api/memories/{id}/backlinks` | Incoming links |
+| `GET` | `/api/stats` | System stats |
+| `GET` | `/api/config` | Get config |
+| `PUT` | `/api/config` | Update config |
+| `POST` | `/api/backup` | Export all as JSON |
+| `POST` | `/api/restore` | Import from JSON |
+| `POST` | `/api/prune` | Prune memories |
+| `GET` | `/api/profile` | Get identity profile |
+| `PUT` | `/api/profile` | Update profile |
+| `POST` | `/api/preferences/observe` | Log preference observation |
+| `POST` | `/api/preferences/log-skill` | Log skill usage |
+| `POST` | `/api/preferences/consolidate` | Consolidate learned prefs |
+| `GET` | `/api/preferences/observations` | Raw observations |
+| `GET` | `/api/preferences/learned` | Learned preferences |
+| `POST` | `/api/session/log` | Log to active session |
+| `GET` | `/api/session` | Get active session |
+| `POST` | `/api/session/close` | Close session with summary |
+| `GET` | `/api/session/history` | Past sessions |
+
+## Integration
+
+### Hermes Agent (MCP)
+
+The MCP server exposes **20 tools** over stdio JSON-RPC:
+
+```bash
+hermes mcp add lino --command "python3 /path/to/integration/mcp_server.py"
+```
+
+Available tools: `store`, `search`, `recall`, `list`, `stats`, `delete`, `prune`, `update_priority`, `run_sync`, `run_compress`, `watchdog`, `session_done`, `link`, `get_profile`, `observe_preference`, `log_skill`, `consolidate_preferences`, `log_session`, `restore`, `backup`.
+
+### Direct CLI
+
+```bash
+python integration/cli.py store "text" --source x --importance 0.8
+python integration/cli.py search "query" -k 5 --threshold 0.5
+python integration/cli.py get <id>
 python integration/cli.py stats
-python integration/cli.py priority-update memory_01 --priority 0.95
-python integration/cli.py sync [--no-link] [--max-related 5]
-python integration/cli.py compress [--dry-run] [--min-age 24]
-python integration/cli.py watchdog start|stop|status
+python integration/cli.py link <id> [--all]
+python integration/cli.py compress [--dry-run] [--provider groq]
+python integration/cli.py session-done "summary summary"
 ```
 
-## Project Structure
+### Any HTTP Agent (opencode, Copilot, etc.)
 
+```bash
+curl -X POST http://localhost:8210/api/memories \
+  -H "Content-Type: application/json" \
+  -d '{"text": "User prefers dark mode", "importance": 0.8}'
+
+curl "http://localhost:8210/api/search?query=dark+mode&k=5"
 ```
-lino/
-├── src/                     # Core library
-│   ├── embedder.py          # TextEmbedder
-│   ├── memory_store.py      # VectorMemoryStore
-│   ├── retriever.py         # MemoryRetriever
-│   └── consolidator.py      # MemoryConsolidator
-├── ui/                      # FastAPI web interface
-│   ├── app.py               # PATCH /api/memories/{id}/priority endpoint
-│   ├── templates/index.html # Priority slider component
-│   └── static/css/ + js/    # Debounce auto-save slider
-├── integration/             # Hermes / MCP integration
-│   ├── hermes_plugin.py     # 11 tool schemas + 4 new cmd methods
-│   ├── mcp_server.py        # 11 MCP tools
-│   └── cli.py               # Full CLI with 8 subcommands
-├── scripts/
-│   ├── rip_and_compress.py  # LLM compression pipeline
-│   ├── watchdog_sync.py     # Real-time vault file watcher
-│   ├── start.sh / stop.sh   # Dev/prod lifecycle
-│   ├── seed.sh              # Obsidian vault import
-│   ├── backup.sh / restore.sh
-│   └── healthcheck.sh       # Web UI + API health
-├── config/config.yaml
-├── tests/                   # 74 tests
-├── Makefile                 # Convenience commands
-├── Dockerfile / docker-compose.yml
-├── nginx/                   # Reverse proxy config
-├── systemd/                 # Auto-start on boot
-├── data/                    # Persisted stores (gitignored)
-└── requirements.txt
+
+## Deployment
+
+### Systemd (auto-start at login)
+
+```bash
+cp systemd/lino.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now lino.service
 ```
+
+Health-check auto-start script at `bin/lino-server.sh` — called by opencode session start and Hermes plugin init.
+
+### Docker
+
+```bash
+docker compose up --build -d
+```
+
+### Nginx (reverse proxy)
+
+Config at `nginx/lino.conf` — proxies `lino.local` to port 8210, caches static assets for 7 days.
 
 ## Configuration
 
-Everything lives in `config/config.yaml`:
+| Env Var | Default | Description |
+|---------|---------|-------------|
+| `GROQ_API_KEY` | — | For synthesis & compression |
+| `LINO_API_KEY` | — | API key for write endpoints |
+| `LINO_HOST` | `127.0.0.1` | Bind address |
+| `LINO_PORT` | `8210` | Port |
+| `LINO_TIMEOUT` | `30` | Server start timeout (s) |
+
+Config file at `config/config.yaml`:
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `embedder.model_name` | `all-MiniLM-L6-v2` | Sentence Transformer model |
-| `store.backend` | `faiss` | `faiss` or numpy (auto-detected) |
-| `store.persistence.save_path` | `data/memory_store.pkl` | Where the pickle goes |
 | `retriever.default_k` | `10` | Default top-K |
 | `retriever.hybrid_alpha` | `0.5` | Semantic vs keyword weight |
+| `consolidator.max_memories` | `5000` | Hard cap |
 | `consolidator.similarity_threshold` | `0.85` | Cosine threshold for dedup |
-| `consolidator.prune_strategy` | `hybrid` | `by_age`, `by_importance`, `by_access_frequency`, or `hybrid` |
-| `consolidator.max_memories` | `10000` | Hard cap |
-| `logging.level` | `INFO` | Verbosity |
+| `consolidator.prune_strategy` | `by_importance` | `by_age`, `by_importance`, `by_access_frequency`, `hybrid` |
+| `vault.sync_interval_hours` | `6` | Vault sync frequency |
+
+## Persistence
+
+| Path | Contents |
+|------|----------|
+| `~/.neural_memory/store.pkl` | All memories + embeddings + metadata |
+| `~/.neural_memory/preference_observations.json` | Observed preferences (max 10k) |
+| `~/.neural_memory/lino-identity.md` | Generated identity document |
+| `~/.neural_memory/watchdog.pid` | Watchdog daemon PID |
+
+## Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/start.sh` | Start server (dev / prod) |
+| `scripts/stop.sh` | Graceful stop |
+| `scripts/seed.sh` | Import Obsidian vault `.md` files |
+| `scripts/backup.sh` | Timestamped backup (keeps last 10) |
+| `scripts/restore.sh` | Restore from backup |
+| `scripts/maintenance.sh` | Nightly compress + prune |
+| `scripts/healthcheck.sh` | Server health check |
+| `scripts/watchdog_sync.py` | Real-time vault file watcher daemon |
+| `scripts/rip_and_compress.py` | LLM compression pipeline |
+| `scripts/session_memory.py` | Session summarization |
+| `scripts/evaluate.py` | Retrieval accuracy (Recall@K, MAP, MRR) |
+| `scripts/train.py` | Batch embedding training |
 
 ## Tests
 
 ```bash
-pytest tests/ -v     # 74 tests
+pytest tests/ -v
 ```
+
+73 tests, 1 skipped — covers embedder, store, retriever, and consolidator. Uses mock embedders; no real Sentence Transformers needed.
+
+## Architecture
+
+- **TextEmbedder** — Sentence Transformers (`all-MiniLM-L6-v2`, 384-d, L2-normalized)
+- **VectorMemoryStore** — FAISS `IndexFlatIP` (falls back to numpy dot-product), pickle persistence
+- **MemoryRetriever** — Semantic search + hybrid (semantic × keyword overlap), metadata filters
+- **MemoryConsolidator** — Cosine-similarity clustering, multi-strategy pruning (transient first, then by importance with connection boosts), link cleanup
+
+## Roadmap
+
+| Feature | Status |
+|---------|--------|
+| Auto-Linking (semantic + wikilinks) | ✅ Done |
+| Synthesis (RAG Q&A with citations) | ✅ Done |
+| Knowledge Graph (typed edges, BFS, backlinks) | ✅ Done |
+| Real-time Session Logging | ✅ Done |
+| Preference Learning & Consolidation | ✅ Done |
+| Identity / Profile System | ✅ Done |
+| Batch Relink (`POST /api/relink`) | ✅ Done |
+| Auto-start on opencode / Hermes init | ✅ Done |
+| Dream Cycle (22-phase overnight maintenance) | ⬜ |
+| Schema Packs (canonical page types) | ⬜ |
+| Job Queue (crash-safe sub-agents) | ⬜ |
+| Code Intelligence (Tree-sitter) | ⬜ |
+| Ingestion / Import (file watcher, webhooks) | ⬜ |
+| Evaluation Framework | ⬜ |
+| Calibration (Brier scores, bias tags) | ⬜ |
+| Brainstorming (LLM judge) | ⬜ |
+| OAuth 2.1 (PKCE + scopes) | ⬜ |
+| Skills System (43 curated + optimizer) | ⬜ |
+| Multi-Source Federation | ⬜ |
+| 40+ MCP Tools | ⬜ |
 
 ## License
 
