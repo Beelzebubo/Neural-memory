@@ -60,6 +60,12 @@
               <rect x="1" y="12" width="14" height="3" rx="1" stroke="currentColor" stroke-width="1.2"/>
             </svg>
           </button>
+          <button class="topbar-btn" id="btnBrainstormView" title="Brainstorm" data-view="brainstorm">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M8 2a4 4 0 00-4 4c0 1.5.8 2.8 2 3.5V12a1 1 0 001 1h2a1 1 0 001-1V9.5c1.2-.7 2-2 2-3.5a4 4 0 00-4-4z" stroke="currentColor" stroke-width="1.2" fill="none"/>
+              <path d="M5 14h6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            </svg>
+          </button>
           <button class="topbar-btn" id="btnProfileEdit" title="Edit profile">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <circle cx="8" cy="5.5" r="3" stroke="currentColor" stroke-width="1.2"/>
@@ -191,6 +197,115 @@
             </div>
           </div>
         </div>
+
+        <div id="view-brainstorm" class="view">
+          <div class="brainstorm-layout">
+            <div class="brainstorm-sidebar">
+              <div class="brainstorm-sidebar-header">
+                <span class="brainstorm-sidebar-title">Topics</span>
+                <button class="btn btn-sm btn-primary" id="btnNewBrainstorm" title="New brainstorm">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 2v8M2 6h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                  New
+                </button>
+              </div>
+              <div id="brainstormSessionList"><div class="brainstorm-loading">Loading topics...</div></div>
+            </div>
+            <div class="brainstorm-main">
+              <div id="brainstorm-empty" class="empty-state">
+                <div class="empty-icon">
+                  <svg width="48" height="48" viewBox="0 0 48 48" fill="none" opacity="0.3">
+                    <circle cx="24" cy="24" r="20" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 4"/>
+                    <circle cx="24" cy="24" r="8" fill="currentColor" opacity="0.2"/>
+                  </svg>
+                </div>
+                <h3>Select a topic from the sidebar</h3>
+                <p>Click a topic to view its brainstorm graph and session summary.</p>
+              </div>
+              <div id="brainstorm-graph-container" class="hidden">
+                <svg id="brainstorm-svg"></svg>
+                <div id="brainstorm-graph-tooltip" class="hidden"></div>
+                <div class="brainstorm-graph-legend" id="brainstormGraphLegend"></div>
+              </div>
+              <div id="brainstorm-summary" class="hidden">
+                <div class="bs-summary-header">
+                  <div class="bs-summary-title-section">
+                    <span id="bsSummaryTopic" class="bs-summary-topic"></span>
+                    <span id="bsSummaryDate" class="bs-summary-date"></span>
+                  </div>
+                  <div class="bs-summary-stats" id="bsSummaryStats">
+                    <span id="bsSummaryNodeCount">0</span> ideas ·
+                    <span id="bsSummaryEdgeCount">0</span> connections
+                  </div>
+                  <button class="btn btn-sm btn-ghost" id="btnShowMoreSummary">Show More</button>
+                </div>
+                <div class="bs-summary-body" id="bsSummaryBody">
+                  <div id="bsSummaryIdeas" class="bs-summary-ideas"></div>
+                  <div id="bsSummarySynthesis" class="bs-summary-synthesis hidden"></div>
+                </div>
+              </div>
+            </div>
+              <div id="brainstorm-detail-panel" class="hidden">
+                <div class="bs-detail-panel-inner">
+                  <div class="detail-panel-header">
+                    <span class="detail-panel-title" id="bsDetailPanelTitle">Idea Detail</span>
+                    <div class="detail-panel-actions">
+                      <button class="btn btn-ghost btn-icon" id="btnCloseBrainstormDetail" title="Close">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="detail-panel-body" id="bsDetailBody">
+                    <div class="detail-loading" id="bsDetailLoading"><div class="loader"></div></div>
+                    <div class="detail-content" id="bsDetailContent">
+                      <div class="detail-section">
+                        <label class="detail-label">Idea</label>
+                        <p id="bsDetailText" class="brainstorm-detail-text" style="white-space:pre-wrap"></p>
+                      </div>
+                      <div class="detail-section">
+                        <label class="detail-label">Thinking Process</label>
+                        <div id="bsDetailThinkingChain" class="thinking-chain"></div>
+                      </div>
+                      <div class="detail-section">
+                        <label class="detail-label">Phase</label>
+                        <span id="bsDetailPhase" class="bs-phase-badge"></span>
+                      </div>
+                      <div class="detail-section">
+                        <label class="detail-label">Scores</label>
+                        <div id="bsDetailScores" class="bs-scores"></div>
+                      </div>
+                      <div class="detail-section">
+                        <label class="detail-label">Skills Used</label>
+                        <div id="bsDetailSkills" class="bs-skills"></div>
+                      </div>
+                      <div class="detail-section">
+                        <label class="detail-label">Connected Ideas</label>
+                        <div id="bsDetailConnections" class="related-list"></div>
+                      </div>
+                      <div class="detail-section">
+                        <label class="detail-label">Source Memories</label>
+                        <div id="bsDetailSources" class="bs-sources"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="modal-overlay hidden" id="brainstorm-summary-full">
+                <div class="modal modal-wide">
+                  <div class="modal-header">
+                    <h3 id="bsFullSummaryTitle">Brainstorm Summary</h3>
+                    <button class="btn btn-ghost btn-icon modal-close" id="btnCloseFullSummary">
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </button>
+                  </div>
+                  <div class="modal-body" id="bsFullSummaryBody">
+                    <div id="bsFullSummaryInfo"></div>
+                    <div id="bsFullSummaryIdeas"></div>
+                    <div id="bsFullSummarySynthesis"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
 
       </main>
 

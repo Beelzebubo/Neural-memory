@@ -591,3 +591,348 @@ body {
 }
 .profile-name { font-weight: 600; font-size: 13px; color: var(--text-primary); }
 .profile-role { font-size: 10px; color: var(--text-muted); }
+
+/* ── Brainstorm View ── */
+
+.brainstorm-layout {
+  display: flex; width: 100%; height: 100%; overflow: hidden;
+}
+
+.brainstorm-sidebar {
+  width: 220px; min-width: 220px; border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; background: var(--surface);
+}
+
+.brainstorm-sidebar-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px; border-bottom: 1px solid var(--border); gap: 8px;
+}
+
+.brainstorm-sidebar-title {
+  font-weight: 600; font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px;
+}
+
+#brainstormSessionList {
+  flex: 1; overflow-y: auto; padding: 4px;
+}
+
+.bs-session-item {
+  padding: 8px 10px; border-radius: 6px; cursor: pointer; margin: 2px 0;
+  transition: background 0.2s;
+}
+.bs-session-item:hover { background: rgba(255,255,255,0.05); }
+.bs-session-item.active { background: rgba(245, 158, 11, 0.1); border-left: 2px solid var(--amber); }
+
+.bs-session-title { font-size: 12px; font-weight: 500; color: var(--text-primary); margin-bottom: 2px; }
+.bs-session-meta { font-size: 10px; color: var(--text-muted); }
+
+.brainstorm-main {
+  flex: 1; display: flex; flex-direction: column; position: relative; overflow: hidden;
+}
+
+#brainstorm-graph-container {
+  flex: 1; position: relative; overflow: hidden;
+  background: rgba(14, 14, 26, 0.55);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+}
+
+#brainstorm-svg { width: 100%; height: 100%; display: block; }
+
+/* Brainstorm force-directed graph */
+.bs-link { transition: opacity 0.2s; }
+.bs-link line { transition: stroke-opacity 0.2s, stroke-width 0.2s; }
+.bs-link:hover line { stroke-opacity: 0.8 !important; }
+
+.bs-node circle, .bs-node rect { transition: opacity 0.2s, stroke-opacity 0.2s; cursor: pointer; }
+.bs-node:hover circle { stroke-opacity: 0.9 !important; }
+.bs-node:hover rect { stroke-opacity: 0.9 !important; }
+
+.bs-label { pointer-events: none; }
+.bs-badge { pointer-events: none; }
+
+/* Brainstorm graph tooltip */
+#brainstorm-graph-tooltip {
+  position: absolute;
+  background: var(--bg-glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 12px;
+  pointer-events: none;
+  max-width: 280px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+  z-index: 20;
+}
+#brainstorm-graph-tooltip .tt-title { font-weight: 600; color: var(--text-primary); margin-bottom: 4px; font-size: 12px; }
+#brainstorm-graph-tooltip .tt-meta { font-size: 10px; color: var(--text-muted); }
+
+/* Brainstorm graph legend */
+.brainstorm-graph-legend {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.brainstorm-graph-legend .legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.brainstorm-graph-legend .legend-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.brainstorm-graph-legend .legend-sep { border-top: 1px solid #2a2a3e; margin: 4px 0; padding-top: 4px; width: 100%; }
+
+/* Brainstorm summary panel */
+#brainstorm-summary {
+  flex-shrink: 0;
+  background: var(--bg-glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-top: 1px solid var(--border-subtle);
+  max-height: 220px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.bs-summary-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.bs-summary-title-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.bs-summary-topic {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bs-summary-date {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.bs-summary-stats {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.bs-summary-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 16px;
+}
+
+.bs-summary-ideas {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.bs-summary-idea-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+  flex: 0 1 auto;
+  max-width: 280px;
+  min-width: 180px;
+}
+
+.bs-summary-idea-card:hover {
+  border-color: var(--border-active);
+}
+
+.bs-summary-idea-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+}
+
+.bs-summary-idea-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+.bs-summary-synthesis {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: rgba(52, 211, 153, 0.06);
+  border: 1px solid rgba(52, 211, 153, 0.15);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* Per-topic delete button in sidebar */
+.bs-session-delete {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.bs-session-item:hover .bs-session-delete {
+  opacity: 0.5;
+}
+.bs-session-delete:hover {
+  opacity: 1 !important;
+  color: var(--red) !important;
+}
+
+/* Active topic indicator (tick) */
+.bs-session-active-indicator {
+  color: var(--amber);
+  font-weight: 700;
+  margin-right: 2px;
+}
+
+/* Full summary overlay */
+#brainstorm-summary-full .modal {
+  width: 700px;
+  max-width: 90vw;
+}
+#brainstorm-summary-full .modal-body {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.bs-full-idea {
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+.bs-full-idea-text {
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+.bs-full-idea-meta {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-size: 10px;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+.bs-full-idea-scores {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.bs-full-synthesis {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(52, 211, 153, 0.06);
+  border: 1px solid rgba(52, 211, 153, 0.15);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+/* Right-side detail panel for brainstorm */
+#brainstorm-detail-panel {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  bottom: 12px;
+  width: var(--panel-w, 440px);
+  z-index: 15;
+  animation: panelSlideIn 0.3s var(--ease-spring);
+}
+#brainstorm-detail-panel.hidden { display: none; }
+
+.bs-detail-panel-inner {
+  height: 100%;
+  background: var(--bg-glass);
+  backdrop-filter: blur(24px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 8px 48px rgba(0,0,0,0.4);
+}
+
+/* Thinking chain */
+.thinking-chain {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.thinking-step { display: flex; align-items: flex-start; gap: 6px; }
+.thinking-arrow { color: var(--amber); font-weight: 600; flex-shrink: 0; min-width: 14px; text-align: center; }
+.thinking-ref { color: var(--text-primary); font-style: italic; }
+
+.bs-phase-badge { font-size: 11px; font-weight: 500; }
+
+.bs-scores { display: flex; gap: 12px; flex-wrap: wrap; }
+
+.bs-score { display: flex; align-items: center; gap: 6px; font-size: 10px; }
+.bs-score-label { color: var(--text-muted); width: 50px; }
+.bs-score-bar { width: 60px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.bs-score-fill { display: block; height: 100%; border-radius: 2px; }
+.bs-score-val { color: var(--text-secondary); font-family: 'JetBrains Mono', monospace; font-size: 9px; }
+
+.bs-skills { display: flex; gap: 4px; flex-wrap: wrap; }
+
+.bs-skill-pill {
+  font-size: 9px; padding: 1px 8px; border-radius: 10px;
+  background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.2); color: #38BDF8;
+}
+
+.bs-sources { display: flex; gap: 4px; flex-wrap: wrap; }
+.bs-source-id { font-size: 9px; color: var(--text-muted); background: var(--bg); padding: 1px 4px; border-radius: 3px; }
+
+.brainstorm-loading { padding: 16px; text-align: center; font-size: 11px; color: var(--text-muted); }

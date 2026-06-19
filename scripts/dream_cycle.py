@@ -36,6 +36,7 @@ PHASE_NAMES = [
     "compress_transients", "compress_low_importance", "prune_transients",
     "prune_by_score", "close_stale_sessions", "summarize_sessions",
     "consolidate_preferences", "regenerate_identity", "rebuild_graph_cache",
+    "brainstorm",
     "backup", "export_consolidated", "dream_report", "metrics", "integrity_verify", "cooldown",
 ]
 
@@ -98,6 +99,7 @@ class DreamCycle:
         self._phase("consolidate_preferences", self._phase_consolidate_preferences)
         self._phase("regenerate_identity", self._phase_regenerate_identity)
         self._phase("rebuild_graph_cache", self._phase_rebuild_graph_cache)
+        self._phase("brainstorm", self._phase_brainstorm)
         self._phase("backup", self._phase_backup)
         self._phase("export_consolidated", self._phase_export_consolidated)
         self._phase("dream_report", self._phase_dream_report)
@@ -392,6 +394,19 @@ class DreamCycle:
             if related:
                 count += len(related)
         return {"total_edges": count // 2, "total_nodes": len(self.store)}
+
+    def _phase_brainstorm(self) -> dict:
+        try:
+            from scripts.brainstorm import BrainstormEngine
+            engine = BrainstormEngine()
+            result = engine.dream_cycle_run(self.store, self.config)
+            if result.get("session"):
+                from ui.app import brainstorm_store
+                brainstorm_store.add_session(result["session"])
+            return {"session_id": result.get("session_id"), "clusters": result.get("clusters", 0), "nodes": result.get("nodes", 0)}
+        except Exception as e:
+            logger.warning("Brainstorm phase skipped: %s", e)
+            return {"skipped": True, "reason": str(e)}
 
     def _phase_backup(self) -> dict:
         import shutil

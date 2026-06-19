@@ -18,3 +18,23 @@ server:
   workers: 2
 vault:
   sync_interval_hours: 6
+
+brainstorm:
+  enabled: true
+  cluster_threshold: 0.65
+  insights_per_cluster: 2
+  max_clusters: 10
+  api_file: ~/Downloads/api.txt
+  hermes_skills:
+    - /home/Beelzebub/.hermes/skills/dev/knowledge-agent/SKILL.md
+    - /home/Beelzebub/.hermes/skills/dev/completion-workflow/SKILL.md
+    - /home/Beelzebub/.hermes/skills/dev/pathfinder/SKILL.md
+    - /home/Beelzebub/.hermes/skills/dev/mem-search/SKILL.md
+    - /home/Beelzebub/.hermes/skills/marketing/marketing-psychology/SKILL.md
+    - /home/Beelzebub/.hermes/skills/marketing/churn-prevention/SKILL.md
+    - /home/Beelzebub/.hermes/skills/Custom_vault_for_skills/marketing-ideas.md
+    - /home/Beelzebub/.hermes/skills/Custom_vault_for_skills/impeccable.md
+    - /home/Beelzebub/.hermes/skills/creative/humanizer/SKILL.md
+    - /home/Beelzebub/.hermes/skills/creative/architecture-diagram/SKILL.md
+    - /home/Beelzebub/.hermes/skills/software-development/simplify-code/SKILL.md
+  agency_agents_dir: /home/Beelzebub/Documents/agency-agents

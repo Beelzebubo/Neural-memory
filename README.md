@@ -129,6 +129,26 @@ curl -X POST http://localhost:8210/api/session/close \
 
 Active sessions (`protected: True`) are never pruned. Closed sessions are eligible for nightly cleanup.
 
+### Brainstorming
+
+Two-phase brainstorming engine with 3-provider LLM fallback (Gemini → Groq → Bluesminds):
+
+- **Phase 1** — Rough draft using 13 curated `.hermes` skills
+- **Phase 2** — Expert plans matched against 20 agency-agents divisions
+- **Cross-pollination** — Meta-insights combining multiple Phase 2 ideas
+- **Idea consolidation** — Automatically merges semantically similar nodes (word-overlap > 35%)
+- **Session merge** — Combine multiple brainstorm sessions into one with cross-session dedup
+- **Web UI** — Force-directed graph with typed E-R edges, right-side thinking process panel, session summary with "Show More" full-page view
+- **Topics sidebar** — Per-topic delete, active indicator (✓), click-to-toggle selection
+
+```bash
+curl -X POST http://localhost:8210/api/brainstorm \
+  -H "Content-Type: application/json" \
+  -d '{"topic": "How to get into NYU Abu Dhabi", "n_ideas": 5}'
+```
+
+Stored separately from the knowledge graph at `~/.neural_memory/brainstorm_sessions.json`.
+
 ### Preference Learning
 
 The system learns user preferences over time from observations:
@@ -196,12 +216,18 @@ All ~30 endpoints:
 | `GET` | `/api/session` | Get active session |
 | `POST` | `/api/session/close` | Close session with summary |
 | `GET` | `/api/session/history` | Past sessions |
+| `POST` | `/api/brainstorm` | Run brainstorm (topic, n_ideas) |
+| `GET` | `/api/brainstorm/sessions` | List all brainstorm sessions |
+| `GET` | `/api/brainstorm/session/{id}` | Get session with nodes + edges |
+| `DELETE` | `/api/brainstorm/session/{id}` | Delete session |
+| `POST` | `/api/brainstorm/merge` | Merge multiple sessions into one |
+| `POST` | `/api/brainstorm/consolidate/{id}` | Consolidate similar ideas in session |
 
 ## Integration
 
 ### Hermes Agent (MCP)
 
-The MCP server exposes **20 tools** over stdio JSON-RPC:
+The MCP server exposes **23 tools** over stdio JSON-RPC (19 Hermes + 3 brainstorm + 1 consolidate):
 
 ```bash
 hermes mcp add lino --command "python3 /path/to/integration/mcp_server.py"
@@ -285,6 +311,7 @@ Config file at `config/config.yaml`:
 | `~/.neural_memory/watchdog.pid` | Watchdog daemon PID |
 | `~/.neural_memory/consolidated_exports/` | Dream cycle markdown exports (fallback — no Obsidian) |
 | `~/.neural_memory/job_queue.json` | Persistent job queue (crash-safe) |
+| `~/.neural_memory/brainstorm_sessions.json` | Brainstorm sessions (separate from store.pkl) |
 | `~/.neural_memory/dream_report.md` | Dream cycle phase report |
 
 ### Consolidated Export
@@ -314,7 +341,8 @@ Each export folder includes an `INDEX.md` listing all exported memories with ID,
 | `scripts/session_memory.py` | Session summarization |
 | `scripts/evaluate.py` | Retrieval accuracy (Recall@K, MAP, MRR) |
 | `scripts/train.py` | Batch embedding training |
-| `scripts/dream_cycle.py` | 22-phase overnight maintenance pipeline |
+| `scripts/dream_cycle.py` | 22-phase overnight maintenance pipeline (includes brainstorm phase) |
+| `scripts/brainstorm.py` | Two-phase brainstorming engine with consolidation + merge |
 | `scripts/job_queue.py` | Persistent job queue with worker daemon |
 
 ## Tests
@@ -351,7 +379,7 @@ pytest tests/ -v
 | Ingestion / Import (file watcher, webhooks) | ⬜ |
 | Evaluation Framework | ⬜ |
 | Calibration (Brier scores, bias tags) | ⬜ |
-| Brainstorming (LLM judge) | ⬜ |
+| Brainstorming (LLM judge with consolidation + merge) | ✅ Done |
 | OAuth 2.1 (PKCE + scopes) | ⬜ |
 | Skills System (43 curated + optimizer) | ⬜ |
 | Multi-Source Federation | ⬜ |

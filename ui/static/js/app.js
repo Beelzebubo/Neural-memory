@@ -6,6 +6,7 @@ const API = {
   search: '/api/search',
   stats: '/api/stats',
   profile: '/api/profile',
+  brainstorm: '/api/brainstorm',
 }
 
 const PROFILE_UUID = '1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed'
@@ -631,6 +632,10 @@ function switchView(view) {
     document.getElementById('view-graph').classList.add('active')
     document.getElementById('btnGraphView').classList.add('active')
     setTimeout(buildGraph, 80)
+  } else if (view === 'brainstorm') {
+    document.getElementById('view-brainstorm').classList.add('active')
+    document.getElementById('btnBrainstormView').classList.add('active')
+    loadBrainstormSessions()
   } else {
     document.getElementById('view-browser').classList.add('active')
     document.getElementById('btnBrowserView').classList.add('active')
@@ -736,11 +741,726 @@ async function loadAll() {
   } catch(e) {}
 }
 
+// ── Brainstorm ──
+
+let _brainstormSelectedSession = null
+let _brainstormSvg = null, _brainstormG = null, _brainstormGLink = null, _brainstormGNode = null
+let _brainstormSimulation = null
+let _brainstormGraphContainer = null
+let _brainstormSelectedNodeId = null
+let _brainstormGraphData = null
+let _brainstormSessionsCache = []
+
+const BS_EDGE_COLORS = {
+  'generated': '#55557a',
+  'builds_upon': '#38BDF8',
+  'synthesis': '#34D399',
+  'related': '#1a1a2e',
+}
+const BS_EDGE_LABELS = {
+  'generated': '',
+  'builds_upon': 'builds on',
+  'synthesis': 'synthesis',
+  'related': 'related',
+}
+
+function bsEdgeColor(type) { return BS_EDGE_COLORS[type] || '#55557a' }
+
+function isTopicNode(d) { return d.level === 0 && !d.parent_id }
+
+function bsNodeSize(d) {
+  if (isTopicNode(d)) return 22
+  const imp = d.importance || 0.5
+  return 7 + imp * 14
+}
+
+function bsNodeColor(d) {
+  if (isTopicNode(d)) return '#F59E0B'
+  if (d.synthesis) return '#34D399'
+  if (d.phase === 1) return '#F59E0B'
+  return '#38BDF8'
+}
+
+function initBrainstormGraph() {
+  _brainstormSvg = d3.select('#brainstorm-svg')
+  _brainstormSvg.selectAll('*').remove()
+  _brainstormGraphContainer = document.getElementById('brainstorm-graph-container')
+  const width = _brainstormGraphContainer.clientWidth, height = _brainstormGraphContainer.clientHeight
+  _brainstormSvg.attr('width', width).attr('height', height)
+
+  const zoom = d3.zoom().scaleExtent([0.1, 8]).on('zoom', (event) => _brainstormG.attr('transform', event.transform))
+  _brainstormG = _brainstormSvg.append('g')
+  _brainstormSvg.call(zoom)
+  _brainstormSvg.on('dblclick.zoom', null)
+  _brainstormSvg.on('click', (event) => {
+    if (event.target === _brainstormSvg.node()) deselectBrainstormNode()
+  })
+  _brainstormGLink = _brainstormG.append('g')
+  _brainstormGNode = _brainstormG.append('g')
+
+  window.addEventListener('resize', () => {
+    const w = _brainstormGraphContainer.clientWidth, h = _brainstormGraphContainer.clientHeight
+    if (w > 0 && h > 0) _brainstormSvg.attr('width', w).attr('height', h)
+  })
+}
+
+function renderBrainstormGraph(session) {
+  if (!_brainstormSvg) initBrainstormGraph()
+  _brainstormSvg.selectAll('*').remove()
+  _brainstormG = _brainstormSvg.append('g')
+  _brainstormGLink = _brainstormG.append('g')
+  _brainstormGNode = _brainstormG.append('g')
+
+  const container = _brainstormGraphContainer
+  const width = container.clientWidth, height = container.clientHeight
+  _brainstormSvg.attr('width', width).attr('height', height)
+
+  const zoom = d3.zoom().scaleExtent([0.1, 8]).on('zoom', (event) => _brainstormG.attr('transform', event.transform))
+  _brainstormSvg.call(zoom)
+  _brainstormSvg.on('dblclick.zoom', null)
+  _brainstormSvg.on('click', (event) => {
+    if (event.target === _brainstormSvg.node()) deselectBrainstormNode()
+  })
+
+  const nodes = (session.nodes || []).map(n => ({ ...n }))
+  const rawEdges = session.edges || []
+  if (nodes.length === 0) return
+
+  const topicNode = nodes.find(n => isTopicNode(n))
+  _brainstormGraphData = { nodes, edges: rawEdges }
+
+  if (_brainstormSimulation) _brainstormSimulation.stop()
+
+  const links = rawEdges.map(e => ({ source: e.source, target: e.target, type: e.type, reasoning: e.reasoning || '' }))
+
+  _brainstormSimulation = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(links).id(d => d.id).distance(100).strength(0.2))
+    .force('charge', d3.forceManyBody().strength(-200))
+    .force('center', d3.forceCenter(width / 2, height / 2))
+    .force('collision', d3.forceCollide().radius(d => bsNodeSize(d) + 8))
+    .alphaDecay(0.02)
+
+  // Edges
+  const linkGroup = _brainstormGLink.selectAll('g.bs-link').data(links).join('g').attr('class', 'bs-link')
+  linkGroup.append('line')
+    .attr('stroke', d => {
+      const etype = d.type || 'generated'
+      if (topicNode) {
+        const sid = d.source.id || d.source, tid = d.target.id || d.target
+        if (sid === topicNode.id || tid === topicNode.id) return 'rgba(245, 158, 11, 0.2)'
+      }
+      if (etype !== 'generated') return bsEdgeColor(etype)
+      return '#1a1a2e'
+    })
+    .attr('stroke-width', d => (d.type && d.type !== 'generated' && d.type !== 'related') ? 1.5 : 0.8)
+    .attr('stroke-opacity', d => (d.type && d.type !== 'generated' && d.type !== 'related') ? 0.5 : 0.25)
+    .attr('stroke-dasharray', d => d.type === 'related' ? '3,3' : 'none')
+    .attr('data-type', d => d.type || 'generated')
+
+  linkGroup.append('text')
+    .text(d => BS_EDGE_LABELS[d.type] || '')
+    .attr('font-size', 8)
+    .attr('fill', d => bsEdgeColor(d.type))
+    .attr('font-family', "'JetBrains Mono', monospace")
+    .attr('dy', -6)
+    .attr('text-anchor', 'middle')
+    .attr('opacity', d => BS_EDGE_LABELS[d.type] ? 0.7 : 0)
+    .attr('paint-order', 'stroke')
+    .attr('stroke', '#08080E')
+    .attr('stroke-width', 4)
+    .style('pointer-events', 'none')
+
+  // Nodes
+  const node = _brainstormGNode.selectAll('g.bs-node').data(nodes).join('g')
+    .attr('class', 'bs-node')
+    .attr('transform', d => `translate(${d.x || width/2},${d.y || height/2})`)
+    .style('cursor', 'pointer')
+
+  node.each(function(d) {
+    const el = d3.select(this)
+    el.selectAll('*').remove()
+    const size = bsNodeSize(d)
+    if (isTopicNode(d)) {
+      const s = size
+      el.append('rect')
+        .attr('x', -s * 0.7).attr('y', -s * 0.7)
+        .attr('width', s * 1.4).attr('height', s * 1.4)
+        .attr('transform', 'rotate(45)')
+        .attr('fill', 'url(#bs-topic-grad)')
+        .attr('stroke', '#F59E0B').attr('stroke-width', 2)
+        .attr('stroke-opacity', d.id === _brainstormSelectedNodeId ? 0.9 : 0.4)
+        .style('filter', 'drop-shadow(0 0 8px rgba(245, 158, 11, 0.3))')
+    } else {
+      el.append('circle')
+        .attr('r', size)
+        .attr('fill', d.synthesis ? 'rgba(52, 211, 153, 0.2)' : d.phase === 1 ? 'rgba(245, 158, 11, 0.15)' : 'rgba(56, 189, 248, 0.15)')
+        .attr('stroke', _brainstormSelectedNodeId === d.id ? bsNodeColor(d) : bsNodeColor(d))
+        .attr('stroke-width', _brainstormSelectedNodeId === d.id ? 2.5 : 1.5)
+        .attr('stroke-opacity', _brainstormSelectedNodeId === d.id ? 0.9 : 0.3)
+        .style('filter', d.synthesis ? 'drop-shadow(0 0 6px rgba(52, 211, 153, 0.25))' : 'none')
+    }
+  })
+
+  // Labels
+  const label = _brainstormGNode.selectAll('text.bs-label').data(nodes).join('text')
+    .attr('class', 'bs-label')
+    .text(d => {
+      if (isTopicNode(d)) return 'Topic'
+      const t = d.text || ''
+      const clean = t.replace(/^Here are some/i, '').replace(/^Here's/i, '').replace(/^Okay,\s*/i, '').trim()
+      return clean.length > 22 ? clean.slice(0, 22) + '…' : clean
+    })
+    .attr('font-size', d => isTopicNode(d) ? 9 : 8)
+    .attr('dx', 0)
+    .attr('dy', d => bsNodeSize(d) + 12)
+    .attr('text-anchor', 'middle')
+    .attr('fill', '#55557a')
+    .style('pointer-events', 'none')
+    .style('font-family', "'JetBrains Mono', monospace")
+
+  // Phase/synthesis badge
+  const badge = _brainstormGNode.selectAll('text.bs-badge').data(nodes).join('text')
+    .attr('class', 'bs-badge')
+    .text(d => {
+      if (isTopicNode(d)) return '★'
+      if (d.synthesis) return 'Σ'
+      return d.phase === 1 ? 'P1' : 'P2'
+    })
+    .attr('font-size', d => isTopicNode(d) ? 10 : 7)
+    .attr('dx', d => bsNodeSize(d) + 5)
+    .attr('dy', 3)
+    .attr('fill', d => bsNodeColor(d))
+    .attr('font-weight', d => isTopicNode(d) ? 700 : 500)
+    .attr('font-family', "'JetBrains Mono', monospace")
+    .style('pointer-events', 'none')
+
+  // Events
+  node.on('click', (event, d) => {
+    event.stopPropagation()
+    selectBrainstormNode(d.id)
+  })
+  node.on('mouseenter', (event, d) => {
+    if (_brainstormSelectedNodeId === d.id) return
+    showBrainstormTooltip(event, d)
+    highlightBrainstormConnections(d.id)
+  })
+  node.on('mouseleave', () => {
+    hideBrainstormTooltip()
+    clearBrainstormHighlight()
+  })
+
+  linkGroup.on('mouseenter', (event, d) => {
+    d3.select(event.currentTarget).select('line')
+      .attr('stroke', '#F59E0B').attr('stroke-width', 1.5).attr('stroke-opacity', 0.5)
+    d3.select(event.currentTarget).select('text')
+      .attr('fill', '#F59E0B').attr('opacity', 1)
+  })
+  linkGroup.on('mouseleave', (event, d) => {
+    const etype = d.type || 'generated'
+    d3.select(event.currentTarget).select('line')
+      .attr('stroke', etype !== 'generated' && etype !== 'related' ? bsEdgeColor(etype) : '#1a1a2e')
+      .attr('stroke-width', (etype && etype !== 'generated' && etype !== 'related') ? 1.5 : 0.8)
+      .attr('stroke-opacity', (etype && etype !== 'generated' && etype !== 'related') ? 0.5 : 0.25)
+    d3.select(event.currentTarget).select('text')
+      .attr('fill', bsEdgeColor(etype)).attr('opacity', BS_EDGE_LABELS[etype] ? 0.7 : 0)
+  })
+
+  // Tick
+  _brainstormSimulation.on('tick', () => {
+    if (topicNode) { topicNode.fx = width / 2; topicNode.fy = height / 2 }
+    linkGroup.selectAll('line')
+      .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+      .attr('x2', d => d.target.x).attr('y2', d => d.target.y)
+    linkGroup.selectAll('text')
+      .attr('x', d => (d.source.x + d.target.x) / 2)
+      .attr('y', d => (d.source.y + d.target.y) / 2)
+    node.attr('transform', d => `translate(${d.x},${d.y})`)
+    label.attr('x', d => d.x).attr('y', d => d.y)
+    badge.attr('x', d => d.x).attr('y', d => d.y)
+  })
+
+  // Defs
+  const defs = _brainstormSvg.select('defs')
+  if (defs.empty()) _brainstormSvg.insert('defs', ':first-child')
+  const grad = _brainstormSvg.select('defs').selectAll('#bs-topic-grad').data([0])
+  grad.join('enter').append('radialGradient').attr('id', 'bs-topic-grad')
+    .attr('cx', '30%').attr('cy', '30%').attr('r', '70%')
+    .each(function() {
+      d3.select(this).append('stop').attr('offset', '0%').attr('stop-color', '#FCD34D').attr('stop-opacity', 0.8)
+      d3.select(this).append('stop').attr('offset', '100%').attr('stop-color', '#F59E0B').attr('stop-opacity', 0.3)
+    })
+
+  renderBrainstormLegend()
+}
+
+function selectBrainstormNode(id) {
+  if (!id) return
+  _brainstormSelectedNodeId = id
+  const connected = new Set([id])
+  const edges = _brainstormGraphData.edges || []
+  edges.forEach(e => {
+    if ((e.source.id || e.source) === id) connected.add(e.target.id || e.target)
+    if ((e.target.id || e.target) === id) connected.add(e.source.id || e.source)
+  })
+  _brainstormGNode.selectAll('g.bs-node').transition().duration(300)
+    .attr('opacity', d => connected.has(d.id) ? 1 : 0.12)
+  _brainstormGNode.selectAll('circle, rect').transition().duration(300)
+    .attr('opacity', d => connected.has(d.id) ? 1 : 0.12)
+  _brainstormGLink.selectAll('g.bs-link').each(function(d) {
+    const el = d3.select(this)
+    const sid = d.source.id || d.source, tid = d.target.id || d.target
+    const isConnected = (sid === id || tid === id)
+    el.select('line').transition().duration(300)
+      .attr('stroke-opacity', isConnected ? 0.6 : 0.04)
+      .attr('stroke-width', isConnected ? 2 : 0.8)
+    el.select('text').transition().duration(300)
+      .attr('opacity', isConnected ? 1 : 0.01)
+  })
+  showBrainstormNodeDetail(id)
+}
+
+function deselectBrainstormNode() {
+  _brainstormSelectedNodeId = null
+  if (!_brainstormGNode) return
+  _brainstormGNode.selectAll('g.bs-node').transition().duration(300).attr('opacity', 1)
+  _brainstormGNode.selectAll('circle, rect').transition().duration(300).attr('opacity', 1)
+  _brainstormGLink.selectAll('g.bs-link').each(function(d) {
+    const etype = d.type || 'generated'
+    d3.select(this).select('line').transition().duration(300)
+      .attr('stroke-opacity', (etype && etype !== 'generated' && etype !== 'related') ? 0.5 : 0.25)
+      .attr('stroke-width', (etype && etype !== 'generated' && etype !== 'related') ? 1.5 : 0.8)
+    d3.select(this).select('text').transition().duration(300)
+      .attr('opacity', BS_EDGE_LABELS[etype] ? 0.7 : 0)
+  })
+  hideBrainstormDetail()
+}
+
+function highlightBrainstormConnections(id) {
+  const connected = new Set([id])
+  const edges = _brainstormGraphData.edges || []
+  edges.forEach(e => {
+    if ((e.source.id || e.source) === id) connected.add(e.target.id || e.target)
+    if ((e.target.id || e.target) === id) connected.add(e.source.id || e.source)
+  })
+  _brainstormGNode.selectAll('g.bs-node').attr('opacity', d => connected.has(d.id) ? 1 : 0.1)
+  _brainstormGLink.selectAll('g.bs-link').each(function(d) {
+    const el = d3.select(this)
+    const sid = d.source.id || d.source, tid = d.target.id || d.target
+    const isConnected = (sid === id || tid === id)
+    el.select('line').attr('stroke-opacity', isConnected ? 0.5 : 0.03)
+    el.select('text').attr('opacity', isConnected ? 1 : 0.01)
+  })
+}
+
+function clearBrainstormHighlight() {
+  if (_brainstormSelectedNodeId) { selectBrainstormNode(_brainstormSelectedNodeId); return }
+  _brainstormGNode.selectAll('g.bs-node').attr('opacity', 1)
+  _brainstormGLink.selectAll('g.bs-link').each(function(d) {
+    const etype = d.type || 'generated'
+    d3.select(this).select('line').attr('stroke-opacity', (etype && etype !== 'generated' && etype !== 'related') ? 0.5 : 0.25)
+    d3.select(this).select('text').attr('opacity', BS_EDGE_LABELS[etype] ? 0.7 : 0)
+  })
+}
+
+function showBrainstormTooltip(event, d) {
+  const tt = document.getElementById('brainstorm-graph-tooltip')
+  if (!tt) return
+  tt.classList.remove('hidden')
+  const label = escHtml((d.text || '').substring(0, 60))
+  const phaseLabel = isTopicNode(d) ? 'Topic' : d.synthesis ? 'Synthesis' : d.phase === 1 ? 'Phase 1' : 'Phase 2'
+  const phaseColor = isTopicNode(d) ? '#F59E0B' : d.synthesis ? '#34D399' : d.phase === 1 ? '#F59E0B' : '#38BDF8'
+  tt.innerHTML = `
+    <div class="tt-title"><span style="color:${phaseColor}">${phaseLabel}</span> — ${label}</div>
+    <div class="tt-meta">${((d.importance || 0.5) * 10).toFixed(1)}/10 significance</div>`
+  const rect = _brainstormGraphContainer.getBoundingClientRect()
+  const cx = event.clientX || event.sourceEvent?.clientX || 0
+  const cy = event.clientY || event.sourceEvent?.clientY || 0
+  tt.style.left = (cx - rect.left + 14) + 'px'
+  tt.style.top = (cy - rect.top - 12) + 'px'
+}
+
+function hideBrainstormTooltip() {
+  const tt = document.getElementById('brainstorm-graph-tooltip')
+  if (tt) tt.classList.add('hidden')
+}
+
+function renderBrainstormLegend() {
+  const legend = document.getElementById('brainstormGraphLegend')
+  if (!legend) return
+  const edgeTypesPresent = new Set()
+  ;(_brainstormGraphData.edges || []).forEach(e => {
+    const t = e.type || 'generated'
+    if (t !== 'generated') edgeTypesPresent.add(t)
+  })
+  let html = ''
+  html += '<div class="legend-item"><span class="legend-dot" style="background:#F59E0B"></span>Phase 1</div>'
+  html += '<div class="legend-item"><span class="legend-dot" style="background:#38BDF8"></span>Phase 2</div>'
+  html += '<div class="legend-item"><span class="legend-dot" style="background:#34D399"></span>Synthesis</div>'
+  if (edgeTypesPresent.size > 0) {
+    html += '<div class="legend-sep"></div>'
+    edgeTypesPresent.forEach(t => {
+      html += `<div class="legend-item"><span class="legend-dot" style="background:${bsEdgeColor(t)};border-radius:2px;height:3px;width:12px"></span>${escHtml(t)}</div>`
+    })
+  }
+  legend.innerHTML = html
+}
+
+async function loadBrainstormSessions() {
+  const listEl = document.getElementById('brainstormSessionList')
+  const detailPanel = document.getElementById('brainstorm-detail-panel')
+  detailPanel.classList.add('hidden')
+  try {
+    const data = await apiGet(API.brainstorm + '/sessions')
+    const sessions = data.sessions || []
+    _brainstormSessionsCache = sessions
+    if (sessions.length === 0) {
+      listEl.innerHTML = '<p class="text-secondary" style="padding:8px;font-size:11px">No topics yet</p>'
+      deselectBrainstormSession()
+      return
+    }
+    if (_brainstormSelectedSession && !sessions.find(s => s.id === _brainstormSelectedSession.id)) {
+      deselectBrainstormSession()
+    }
+    renderBrainstormSidebar()
+    if (!_brainstormSelectedSession) {
+      deselectBrainstormSession()
+    }
+  } catch (e) {
+    listEl.innerHTML = `<p class="text-secondary" style="padding:8px;font-size:11px">Failed to load: ${e.message}</p>`
+  }
+}
+
+function renderBrainstormSidebar() {
+  const listEl = document.getElementById('brainstormSessionList')
+  const sessions = _brainstormSessionsCache
+  listEl.innerHTML = sessions.map(s => {
+    const date = s.created_at ? s.created_at.slice(0, 10) : '?'
+    const nodeCount = (s.nodes || []).length
+    const edgeCount = (s.edges || []).length
+    const isActive = _brainstormSelectedSession && _brainstormSelectedSession.id === s.id
+    return `<div class="bs-session-item ${isActive ? 'active' : ''}" data-id="${s.id}">
+      <div style="display:flex;align-items:center;justify-content:space-between;width:100%">
+        <div style="flex:1;min-width:0;padding-right:4px">
+          <div class="bs-session-title">${isActive ? '<span class="bs-session-active-indicator">✓</span> ' : ''}${escHtml(s.topic || 'Untitled')}</div>
+          <div class="bs-session-meta">${date} · ${nodeCount} ideas · ${edgeCount} connections</div>
+        </div>
+        <button class="bs-session-delete" data-id="${s.id}" title="Delete topic">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.2"/></svg>
+        </button>
+      </div>
+    </div>`
+  }).join('')
+  listEl.querySelectorAll('.bs-session-item').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.bs-session-delete')) return
+      selectBrainstormSession(el.dataset.id)
+    })
+  })
+  listEl.querySelectorAll('.bs-session-delete').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const sid = btn.dataset.id
+      if (!confirm('Delete this brainstorm session?')) return
+      apiDelete(API.brainstorm + '/session/' + sid).then(() => {
+        if (_brainstormSelectedSession && _brainstormSelectedSession.id === sid) {
+          _brainstormSelectedSession = null
+        }
+        loadBrainstormSessions()
+      }).catch(e => alert('Delete failed: ' + e.message))
+    })
+  })
+}
+
+function deselectBrainstormSession() {
+  _brainstormSelectedSession = null
+  _brainstormSelectedNodeId = null
+  if (_brainstormSimulation) _brainstormSimulation.stop()
+  document.getElementById('brainstorm-empty').classList.remove('hidden')
+  document.getElementById('brainstorm-graph-container').classList.add('hidden')
+  document.getElementById('brainstorm-summary').classList.add('hidden')
+  document.getElementById('brainstorm-detail-panel').classList.add('hidden')
+  document.querySelectorAll('.bs-session-item').forEach(el => el.classList.remove('active'))
+}
+
+async function selectBrainstormSession(sessionId) {
+  if (_brainstormSelectedSession && _brainstormSelectedSession.id === sessionId) {
+    deselectBrainstormSession()
+    return
+  }
+  try {
+    const session = await apiGet(API.brainstorm + '/session/' + sessionId)
+    _brainstormSelectedSession = session
+    _brainstormSelectedNodeId = null
+    document.getElementById('brainstorm-empty').classList.add('hidden')
+    document.getElementById('brainstorm-graph-container').classList.remove('hidden')
+    document.getElementById('brainstorm-summary').classList.remove('hidden')
+    document.getElementById('brainstorm-detail-panel').classList.add('hidden')
+    renderBrainstormSidebar()
+    renderBrainstormGraph(session)
+    renderBrainstormSummary(session)
+  } catch (e) {
+    console.error('Failed to load session:', e)
+  }
+}
+
+
+
+function showBrainstormNodeDetail(nodeId) {
+  const panel = document.getElementById('brainstorm-detail-panel')
+  const body = document.getElementById('bsDetailBody')
+  const loading = document.getElementById('bsDetailLoading')
+  const content = document.getElementById('bsDetailContent')
+  panel.classList.remove('hidden')
+  loading.classList.remove('hidden')
+  content.classList.add('hidden')
+
+  // Find the node in the session data
+  const node = (_brainstormSelectedSession.nodes || []).find(n => n.id === nodeId)
+  if (!node) {
+    loading.classList.add('hidden')
+    return
+  }
+
+  document.getElementById('bsDetailPanelTitle').textContent = (node.text || '').substring(0, 36) || 'Idea'
+
+  // Convert old sessions that have scores as nested dict vs flat
+  const scores = node.scores || {}
+  const sNovelty = scores.novelty || scores.novelty === 0 ? scores.novelty : 0.5
+  const sFeasibility = scores.feasibility || scores.feasibility === 0 ? scores.feasibility : 0.5
+  const sRelevance = scores.relevance || scores.relevance === 0 ? scores.relevance : 0.8
+  const sCoherence = scores.coherence || scores.coherence === 0 ? scores.coherence : 0.7
+
+  // Idea text
+  document.getElementById('bsDetailText').textContent = node.text || 'No content'
+
+  // Phase
+  const phaseEl = document.getElementById('bsDetailPhase')
+  if (isTopicNode(node)) {
+    phaseEl.textContent = '★ Topic — Core Question'
+    phaseEl.style.color = '#F59E0B'
+  } else if (node.synthesis) {
+    phaseEl.textContent = 'Σ Synthesis — Cross-Pollination'
+    phaseEl.style.color = '#34D399'
+  } else {
+    phaseEl.textContent = node.phase === 1 ? 'Phase 1 — Rough Draft' : 'Phase 2 — Expert Plan'
+    phaseEl.style.color = node.phase === 1 ? '#F59E0B' : '#38BDF8'
+  }
+
+  // Thinking process (reasoning chain)
+  const thinkingEl = document.getElementById('bsDetailThinkingChain')
+  let reasoningChainHtml = ''
+  // Show how this idea was derived
+  if (node.reasoning && !isTopicNode(node)) {
+    reasoningChainHtml += `<div class="thinking-step"><span class="thinking-arrow">→</span> ${escHtml(node.reasoning)}</div>`
+  }
+  // Show what this idea built upon (parent)
+  if (node.parent_id) {
+    const parent = (_brainstormSelectedSession.nodes || []).find(n => n.id === node.parent_id)
+    if (parent) {
+      const parentPreview = (parent.text || '').substring(0, 80)
+      reasoningChainHtml += `<div class="thinking-step"><span class="thinking-arrow">↳</span> Built upon: <span class="thinking-ref">${escHtml(parentPreview)}</span></div>`
+    }
+  }
+  // Show synthesis sources
+  if (node.synthesis && node.synthesis_sources && node.synthesis_sources.length > 0) {
+    const synSources = node.synthesis_sources.map(sid => {
+      const sn = (_brainstormSelectedSession.nodes || []).find(n => n.id === sid)
+      return sn ? (sn.text || '').substring(0, 50) : sid.substring(0, 8)
+    })
+    reasoningChainHtml += `<div class="thinking-step"><span class="thinking-arrow">Σ</span> Combined: ${synSources.map(s => `<span class="thinking-ref">${escHtml(s)}</span>`).join(' + ')}</div>`
+  }
+  thinkingEl.innerHTML = reasoningChainHtml || '<span class="text-secondary" style="font-size:11px">No reasoning recorded</span>'
+
+  // Scores
+  const scoresEl = document.getElementById('bsDetailScores')
+  const scoreLabels = { novelty: 'Novelty', feasibility: 'Feasibility', relevance: 'Relevance', coherence: 'Coherence' }
+  const svals = { novelty: sNovelty, feasibility: sFeasibility, relevance: sRelevance, coherence: sCoherence }
+  scoresEl.innerHTML = Object.entries(scoreLabels).map(([key, label]) => {
+    const val = svals[key] || 0
+    return `<div class="bs-score"><span class="bs-score-label">${label}</span><span class="bs-score-bar"><span class="bs-score-fill" style="width:${val * 100}%;background:${val > 0.7 ? '#34D399' : val > 0.4 ? '#F59E0B' : '#FB7185'}"></span></span><span class="bs-score-val">${(val * 10).toFixed(0)}/10</span></div>`
+  }).join('')
+
+  // Skills
+  const skillsEl = document.getElementById('bsDetailSkills')
+  const skills = node.skills_used || []
+  skillsEl.innerHTML = skills.length > 0
+    ? skills.map(s => `<span class="bs-skill-pill">${escHtml(typeof s === 'string' ? s.split('/').pop() || s : s)}</span>`).join('')
+    : '<span class="text-secondary">None</span>'
+
+  // Connected ideas
+  const connEl = document.getElementById('bsDetailConnections')
+  const allEdges = _brainstormSelectedSession.edges || []
+  const connectedEdges = allEdges.filter(e => {
+    const sid = e.source.id || e.source, tid = e.target.id || e.target
+    return sid === nodeId || tid === nodeId
+  })
+  if (connectedEdges.length > 0) {
+    connEl.innerHTML = connectedEdges.map(e => {
+      const sid = e.source.id || e.source, tid = e.target.id || e.target
+      const otherId = sid === nodeId ? tid : sid
+      const otherNode = (_brainstormSelectedSession.nodes || []).find(n => n.id === otherId)
+      const otherLabel = otherNode ? (otherNode.text || '').substring(0, 40) : otherId.substring(0, 12)
+      const color = otherNode ? bsNodeColor(otherNode) : '#55557a'
+      const etype = e.type || 'generated'
+      const typeLabel = etype !== 'generated' ? `<span class="edge-type" style="font-size:8px;color:${bsEdgeColor(etype)};margin-left:4px">${escHtml(etype)}</span>` : ''
+      return `<div class="related-item" data-id="${otherId}"><span class="related-dot" style="background:${color}"></span>${escHtml(otherLabel)}${typeLabel}</div>`
+    }).join('')
+    connEl.querySelectorAll('.related-item').forEach(el => el.addEventListener('click', () => {
+      selectBrainstormNode(el.dataset.id)
+    }))
+  } else {
+    connEl.innerHTML = '<p class="text-secondary">No connections</p>'
+  }
+
+  // Source memories
+  const sourcesEl = document.getElementById('bsDetailSources')
+  const sources = node.source_memories || []
+  sourcesEl.innerHTML = sources.length > 0
+    ? sources.map(s => `<code class="bs-source-id">${escHtml(s.slice(0, 12))}</code>`).join(' ')
+    : '<span class="text-secondary">None</span>'
+
+  loading.classList.add('hidden')
+  content.classList.remove('hidden')
+}
+
+function hideBrainstormDetail() {
+  document.getElementById('brainstorm-detail-panel').classList.add('hidden')
+}
+
+function renderBrainstormSummary(session) {
+  const topic = session.topic || 'Topic'
+  const date = session.created_at ? new Date(session.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : ''
+  const nodes = session.nodes || []
+  const edges = session.edges || []
+  const phase2Nodes = nodes.filter(n => n.phase === 2 && !n.synthesis)
+  const synthesisNodes = nodes.filter(n => n.synthesis)
+
+  document.getElementById('bsSummaryTopic').textContent = topic
+  document.getElementById('bsSummaryDate').textContent = date
+  document.getElementById('bsSummaryNodeCount').textContent = nodes.length
+  document.getElementById('bsSummaryEdgeCount').textContent = edges.length
+
+  // Idea preview cards
+  const ideasEl = document.getElementById('bsSummaryIdeas')
+  if (phase2Nodes.length > 0) {
+    ideasEl.innerHTML = phase2Nodes.map(n => {
+      const text = (n.text || '').substring(0, 80)
+      const scores = n.scores || {}
+      const avg = ((scores.novelty || 0.5) + (scores.feasibility || 0.5)) / 2
+      return `<div class="bs-summary-idea-card" data-id="${n.id}">
+        <div class="bs-summary-idea-text">${escHtml(text)}</div>
+        <div class="bs-summary-idea-meta">
+          <span style="color:#38BDF8">P2</span>
+          <span>${(avg * 10).toFixed(0)}/10 avg</span>
+        </div>
+      </div>`
+    }).join('')
+    ideasEl.querySelectorAll('.bs-summary-idea-card').forEach(el => {
+      el.addEventListener('click', () => selectBrainstormNode(el.dataset.id))
+    })
+  } else {
+    ideasEl.innerHTML = '<span class="text-secondary" style="font-size:11px">No Phase 2 ideas generated yet.</span>'
+  }
+
+  // Synthesis preview
+  const synEl = document.getElementById('bsSummarySynthesis')
+  if (synthesisNodes.length > 0) {
+    const synText = (synthesisNodes[0].text || '').substring(0, 200)
+    synEl.textContent = 'Synthesis: ' + synText + (synText.length >= 200 ? '...' : '')
+    synEl.classList.remove('hidden')
+  } else {
+    synEl.classList.add('hidden')
+  }
+}
+
+function showFullBrainstormSummary() {
+  const session = _brainstormSelectedSession
+  if (!session) return
+  const nodes = session.nodes || []
+  const edges = session.edges || []
+  const phase2Nodes = nodes.filter(n => n.phase === 2 && !n.synthesis)
+  const synthesisNodes = nodes.filter(n => n.synthesis)
+  const phase1Nodes = nodes.filter(n => n.phase === 1 && !n.synthesis)
+
+  document.getElementById('bsFullSummaryTitle').textContent = (session.topic || 'Brainstorm') + ' — Full Summary'
+
+  // Info
+  const date = session.created_at ? new Date(session.created_at).toLocaleDateString() : '?'
+  document.getElementById('bsFullSummaryInfo').innerHTML = `
+    <div class="detail-section">
+      <label class="detail-label">Topic</label>
+      <p style="font-size:15px;font-weight:600;color:var(--amber)">${escHtml(session.topic || 'Untitled')}</p>
+      <p style="font-size:11px;color:var(--text-muted);margin-top:4px">${date} · ${nodes.length} ideas · ${edges.length} connections</p>
+    </div>
+  `
+
+  // Ideas
+  const ideasEl = document.getElementById('bsFullSummaryIdeas')
+  let ideasHtml = '<label class="detail-label" style="margin-top:16px;margin-bottom:8px;display:block">Ideas</label>'
+
+  for (const group of [
+    { label: 'Phase 2 — Expert Plans', nodes: phase2Nodes, color: '#38BDF8' },
+    { label: 'Phase 1 — Rough Drafts', nodes: phase1Nodes, color: '#F59E0B' },
+  ]) {
+    if (group.nodes.length === 0) continue
+    ideasHtml += `<label class="detail-label" style="margin-top:12px;margin-bottom:6px;display:block;color:${group.color}">${group.label}</label>`
+    ideasHtml += group.nodes.map(n => {
+      const scores = n.scores || {}
+      const skills = n.skills_used || []
+      const scoreHtml = Object.entries(scores).filter(([k]) => ['novelty','feasibility','relevance','coherence'].includes(k))
+        .map(([k, v]) => `<span style="margin-right:6px">${k}: ${((v || 0) * 10).toFixed(0)}/10</span>`).join('')
+      const skillsHtml = skills.map(s => `<span class="bs-skill-pill">${escHtml(typeof s === 'string' ? s.split('/').pop() || s : s)}</span>`).join(' ')
+      return `<div class="bs-full-idea">
+        <div class="bs-full-idea-text">${escHtml(n.text || '')}</div>
+        <div class="bs-full-idea-meta">
+          <span class="bs-phase-badge" style="color:${group.color}">${n.phase === 1 ? 'P1' : 'P2'}</span>
+          <div class="bs-full-idea-scores">${scoreHtml}</div>
+          ${skillsHtml ? `<span>⚡ ${skillsHtml}</span>` : ''}
+        </div>
+      </div>`
+    }).join('')
+  }
+  ideasEl.innerHTML = ideasHtml
+
+  // Synthesis
+  const synEl = document.getElementById('bsFullSummarySynthesis')
+  if (synthesisNodes.length > 0) {
+    synEl.innerHTML = '<label class="detail-label" style="margin-top:16px;margin-bottom:8px;display:block;color:#34D399">Synthesis</label>\n' +
+      synthesisNodes.map(n => `<div class="bs-full-synthesis">${escHtml(n.text || '')}</div>`).join('')
+    synEl.classList.remove('hidden')
+  } else {
+    synEl.classList.add('hidden')
+  }
+
+  document.getElementById('brainstorm-summary-full').classList.remove('hidden')
+}
+
+function hideFullBrainstormSummary() {
+  document.getElementById('brainstorm-summary-full').classList.add('hidden')
+}
+
+document.getElementById('btnCloseBrainstormDetail').addEventListener('click', hideBrainstormDetail)
+document.getElementById('btnShowMoreSummary').addEventListener('click', showFullBrainstormSummary)
+document.getElementById('btnCloseFullSummary').addEventListener('click', hideFullBrainstormSummary)
+
+document.getElementById('btnNewBrainstorm').addEventListener('click', () => {
+  const topic = prompt('What should we brainstorm about?', '')
+  if (!topic || !topic.trim()) return
+  apiPost(API.brainstorm, { topic: topic.trim(), n_ideas: 5 })
+    .then(data => {
+      if (data.session_id) {
+        loadBrainstormSessions()
+      }
+    })
+    .catch(e => alert('Brainstorm failed: ' + e.message))
+})
+
 function escHtml(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML }
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnGraphView').addEventListener('click', () => switchView('graph'))
   document.getElementById('btnBrowserView').addEventListener('click', () => switchView('browser'))
+  document.getElementById('btnBrainstormView').addEventListener('click', () => switchView('brainstorm'))
   document.getElementById('btnProfileEdit').addEventListener('click', openProfileModal)
   document.getElementById('btnAddMemory').addEventListener('click', () => document.getElementById('addModal').classList.remove('hidden'))
   document.getElementById('btnEmptyAdd').addEventListener('click', () => document.getElementById('addModal').classList.remove('hidden'))
@@ -818,7 +1538,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      if (!document.getElementById('addModal').classList.contains('hidden')) document.getElementById('addModal').classList.add('hidden')
+      if (!document.getElementById('brainstorm-summary-full').classList.contains('hidden')) hideFullBrainstormSummary()
+      else if (!document.getElementById('addModal').classList.contains('hidden')) document.getElementById('addModal').classList.add('hidden')
       else if (!document.getElementById('profileModal').classList.contains('hidden')) closeProfileModal()
       else deselectNode()
     }

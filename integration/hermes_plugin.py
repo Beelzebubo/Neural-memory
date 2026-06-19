@@ -171,6 +171,25 @@ TOOL_SCHEMAS = {
         "description": "Get job queue statistics (totals by status and type).",
         "parameters": {},
     },
+    "neural_memory_brainstorm": {
+        "description": "Run the two-phase brainstorming engine. Phase 1 uses .hermes skills for rough ideas; Phase 2 matches agency-agents divisions for expert plans. Stored separately from the knowledge graph as chain-linked sessions.",
+        "parameters": {
+            "topic": {"type": "string", "description": "Topic or problem to brainstorm about"},
+            "n_ideas": {"type": "integer", "description": "Number of ideas to generate (default 5)", "nullable": True},
+        },
+        "required": ["topic"],
+    },
+    "neural_memory_brainstorm_sessions": {
+        "description": "List all brainstorm sessions.",
+        "parameters": {},
+    },
+    "neural_memory_brainstorm_session": {
+        "description": "Get a specific brainstorm session with its chain of ideas.",
+        "parameters": {
+            "session_id": {"type": "string", "description": "Session ID to retrieve"},
+        },
+        "required": ["session_id"],
+    },
 }
 
 DEFAULT_STORE_PATH = Path.home() / ".neural_memory" / "store.pkl"
@@ -758,6 +777,40 @@ class MemoryPlugin:
         from scripts.job_queue import job_queue
         try:
             return job_queue.stats()
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def cmd_brainstorm(self, topic: str, n_ideas: int = 5) -> Dict[str, Any]:
+        from scripts.brainstorm import BrainstormEngine
+        try:
+            engine = BrainstormEngine()
+            result = engine.active_brainstorm(topic=topic, n_ideas=n_ideas, memory_system=self)
+            if result.get("session"):
+                from ui.app import brainstorm_store
+                brainstorm_store.add_session(result["session"])
+            return {
+                "status": "ok",
+                "session_id": result.get("session_id"),
+                "nodes": result.get("nodes", 0),
+            }
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def cmd_brainstorm_sessions(self) -> Dict[str, Any]:
+        try:
+            from ui.app import brainstorm_store
+            sessions = brainstorm_store.list_sessions()
+            return {"status": "ok", "sessions": [{"id": s["id"], "topic": s.get("topic"), "created_at": s.get("created_at"), "nodes": len(s.get("nodes", []))} for s in sessions]}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def cmd_brainstorm_session(self, session_id: str) -> Dict[str, Any]:
+        try:
+            from ui.app import brainstorm_store
+            session = brainstorm_store.get_session(session_id)
+            if not session:
+                return {"status": "error", "error": "Session not found"}
+            return {"status": "ok", "session": session}
         except Exception as e:
             return {"status": "error", "error": str(e)}
 

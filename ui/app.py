@@ -1163,6 +1163,105 @@ class DreamRequest(BaseModel):
     fail_fast: bool = False
 
 
+# ── Brainstorm Store (separate from knowledge graph) ──
+
+class BrainstormStore:
+    """JSON-backed store for brainstorm sessions — NOT in the knowledge graph."""
+    def __init__(self):
+        self.path = Path.home() / ".neural_memory" / "brainstorm_sessions.json"
+        self.sessions: Dict[str, dict] = {}
+        self._load()
+
+    def _load(self):
+        if self.path.exists():
+            try:
+                data = json.loads(self.path.read_text())
+                self.sessions = {s["id"]: s for s in data.get("sessions", []) if not s.get("deleted")}
+            except Exception as e:
+                logger.warning("Failed to load brainstorm store: %s", e)
+
+    def _save(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps({"sessions": list(self.sessions.values())}, indent=2))
+
+    def add_session(self, session: dict):
+        self.sessions[session["id"]] = session
+        self._save()
+
+    def get_session(self, sid: str) -> Optional[dict]:
+        return self.sessions.get(sid)
+
+    def list_sessions(self) -> List[dict]:
+        return sorted(self.sessions.values(), key=lambda s: s.get("created_at", ""), reverse=True)
+
+    def delete_session(self, sid: str):
+        if sid in self.sessions:
+            self.sessions[sid]["deleted"] = True
+            del self.sessions[sid]
+            self._save()
+
+    def has_session(self, sid: str) -> bool:
+        return sid in self.sessions
+
+    def merge_sessions(self, session_ids: List[str]) -> Optional[dict]:
+        """Merge multiple sessions into one. Keeps topic of first, combines all nodes, re-enriches."""
+        sessions = [self.get_session(sid) for sid in session_ids if self.has_session(sid)]
+        if len(sessions) < 2:
+            return sessions[0] if sessions else None
+        base = sessions[0]
+        topic = base.get("topic", "Merged")
+        base["topic"] = f"{topic} (merged {len(sessions)} sessions)"
+        existing_ids = {n["id"] for n in base.get("nodes", [])}
+        for s in sessions[1:]:
+            for n in s.get("nodes", []):
+                if n["id"] not in existing_ids:
+                    existing_ids.add(n["id"])
+                    n["session_id"] = base["id"]
+                    base.setdefault("nodes", []).append(n)
+            for e in s.get("edges", []):
+                base.setdefault("edges", []).append(e)
+        # Delete the source sessions
+        for sid in session_ids[1:]:
+            if self.has_session(sid):
+                self.delete_session(sid)
+        # Consolidate similar Phase 2 nodes across merged sessions
+        from scripts.brainstorm import BrainstormEngine
+        phase2_nodes = [n for n in base.get("nodes", []) if n.get("phase") == 2 and not n.get("synthesis")]
+        if phase2_nodes:
+            engine = BrainstormEngine()
+            consolidated = engine.consolidate_ideas(phase2_nodes, threshold=0.35)
+            base["nodes"] = [n for n in base["nodes"] if not (n.get("phase") == 2 and not n.get("synthesis"))] + consolidated
+        # Re-enrich edges
+        BrainstormEngine._enrich_session(base)
+        self.sessions[base["id"]] = base
+        self._save()
+        return base
+
+    def consolidate_session(self, sid: str) -> Optional[dict]:
+        """Consolidate similar Phase 2 nodes within a single session."""
+        session = self.get_session(sid)
+        if not session:
+            return None
+        from scripts.brainstorm import BrainstormEngine
+        phase2_nodes = [n for n in session.get("nodes", []) if n.get("phase") == 2 and not n.get("synthesis")]
+        if phase2_nodes:
+            engine = BrainstormEngine()
+            consolidated = engine.consolidate_ideas(phase2_nodes, threshold=0.35)
+            session["nodes"] = [n for n in session["nodes"] if not (n.get("phase") == 2 and not n.get("synthesis"))] + consolidated
+        BrainstormEngine._enrich_session(session)
+        self.sessions[sid] = session
+        self._save()
+        return session
+
+
+brainstorm_store = BrainstormStore()
+
+
+class BrainstormRequest(BaseModel):
+    topic: str = Field(..., max_length=5000)
+    n_ideas: int = Field(5, ge=1, le=20)
+
+
 # ── Pages ──
 
 @app.get("/")
@@ -1605,6 +1704,74 @@ async def dream_cycle_endpoint(request: Request, req: DreamRequest):
     except Exception as e:
         logger.exception("Dream Cycle failed")
         raise HTTPException(status_code=500, detail=f"Dream Cycle failed: {e}")
+
+
+# ── Brainstorm ──
+
+from scripts.brainstorm import BrainstormEngine
+
+_brainstorm_engine = None
+
+def _get_brainstorm_engine():
+    global _brainstorm_engine
+    if _brainstorm_engine is None:
+        _brainstorm_engine = BrainstormEngine()
+    return _brainstorm_engine
+
+@app.post("/api/brainstorm", response_class=JSONResponse)
+@limiter.limit("10/minute")
+async def brainstorm_endpoint(request: Request, req: BrainstormRequest):
+    logger.info("Brainstorm triggered via API: %s", req.topic[:80])
+    try:
+        engine = _get_brainstorm_engine()
+        result = engine.active_brainstorm(topic=req.topic, n_ideas=req.n_ideas, memory_system=memory_system)
+        if result.get("session"):
+            brainstorm_store.add_session(result["session"])
+        return {"status": "ok", "session_id": result.get("session_id"), "session": result.get("session")}
+    except Exception as e:
+        logger.exception("Brainstorm failed")
+        raise HTTPException(status_code=500, detail=f"Brainstorm failed: {e}")
+
+@app.get("/api/brainstorm/sessions", response_class=JSONResponse)
+@limiter.limit("30/minute")
+async def brainstorm_sessions_list(request: Request):
+    return {"sessions": brainstorm_store.list_sessions()}
+
+@app.get("/api/brainstorm/session/{session_id}", response_class=JSONResponse)
+@limiter.limit("30/minute")
+async def brainstorm_session_get(request: Request, session_id: str):
+    session = brainstorm_store.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session
+
+@app.delete("/api/brainstorm/session/{session_id}", response_class=JSONResponse)
+@limiter.limit("30/minute")
+async def brainstorm_session_delete(request: Request, session_id: str):
+    if not brainstorm_store.has_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    brainstorm_store.delete_session(session_id)
+    return {"status": "deleted"}
+
+class BrainstormMergeRequest(BaseModel):
+    session_ids: List[str] = Field(..., min_length=2)
+
+@app.post("/api/brainstorm/merge", response_class=JSONResponse)
+@limiter.limit("10/minute")
+async def brainstorm_merge(request: Request, req: BrainstormMergeRequest):
+    valid_ids = [sid for sid in req.session_ids if brainstorm_store.has_session(sid)]
+    if len(valid_ids) < 2:
+        raise HTTPException(status_code=400, detail="Need at least 2 valid sessions to merge")
+    merged = brainstorm_store.merge_sessions(valid_ids)
+    return {"session_id": merged["id"], "topic": merged.get("topic", ""), "nodes": len(merged.get("nodes", [])), "edges": len(merged.get("edges", []))}
+
+@app.post("/api/brainstorm/consolidate/{session_id}", response_class=JSONResponse)
+@limiter.limit("10/minute")
+async def brainstorm_consolidate(request: Request, session_id: str):
+    if not brainstorm_store.has_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    session = brainstorm_store.consolidate_session(session_id)
+    return {"session_id": session_id, "nodes": len(session.get("nodes", [])), "edges": len(session.get("edges", []))}
 
 
 # ── Job Queue ──
