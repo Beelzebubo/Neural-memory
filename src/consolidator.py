@@ -1,9 +1,12 @@
+import logging
 import time
 from typing import Dict, List
 
 import numpy as np
 
 from .memory_store import VectorMemoryStore
+
+logger = logging.getLogger(__name__)
 
 
 class MemoryConsolidator:
@@ -99,37 +102,92 @@ class MemoryConsolidator:
         ids = store.list_all()
         remove_count = len(ids) - max_size
 
-        if strategy == "by_age":
-            ids_sorted = sorted(
-                ids,
-                key=lambda i: store._metadata.get(i, {}).get("timestamp", 0),
-            )
-        elif strategy == "by_importance":
-            ids_sorted = sorted(
-                ids,
-                key=lambda i: store._metadata.get(i, {}).get("importance_score", 0.5),
-            )
-        elif strategy == "by_access_frequency":
-            ids_sorted = sorted(
-                ids,
-                key=lambda i: store._metadata.get(i, {}).get("access_count", 0),
-            )
-        else:
-            ids_sorted = sorted(
-                ids,
-                key=lambda i: (
-                    store._metadata.get(i, {}).get("importance_score", 0.5),
-                    store._metadata.get(i, {}).get("access_count", 0),
-                    store._metadata.get(i, {}).get("timestamp", 0),
-                ),
-            )
+        def _meta_val(i: str, key: str, default):
+            meta = store.get_metadata(i)
+            if meta is not None:
+                return meta.get(key, default)
+            return default
 
+        # Phase 1: Remove transient memories first (tier=transient)
         removed = 0
-        for entry_id in ids_sorted[:remove_count]:
+        transient_ids = [
+            i for i in ids
+            if _meta_val(i, "tier", "active") == "transient"
+        ]
+        for entry_id in transient_ids:
+            self._cleanup_links(store, entry_id)
+            store.delete(entry_id)
+            removed += 1
+            if removed >= remove_count:
+                logger.info("Prune removed %d memories (all transient)", removed)
+                return removed
+
+        ids = store.list_all()
+        remaining_remove = remove_count - removed
+
+        if remaining_remove <= 0:
+            return removed
+
+        # Phase 2: Separate protected memories (never pruned)
+        protectable = []
+        protected_count = 0
+        for i in ids:
+            if _meta_val(i, "protected", False):
+                protected_count += 1
+            else:
+                protectable.append(i)
+
+        if not protectable:
+            logger.info("All %d memories are protected — nothing to prune", protected_count)
+            return 0
+
+        # Phase 3: Compute effective score for each unprotected memory
+        def _effective_score(i: str) -> float:
+            meta = store.get_metadata(i)
+            if meta is None:
+                return 0.0
+            importance = meta.get("importance_score", 0.5)
+            tags = meta.get("tags", []) or []
+            related = meta.get("related_memories", []) or []
+
+            # Connection boost: +0.15 per related memory (capped at +0.3)
+            connection_boost = min(len(related) * 0.15, 0.3)
+
+            # Project/summary boost: +0.1 for tagged memories
+            project_boost = 0.0
+            if any(t.startswith("project:") for t in tags):
+                project_boost += 0.1
+            if "session-summary" in tags or "summary" in tags:
+                project_boost += 0.1
+
+            return importance + connection_boost + project_boost
+
+        # Phase 4: Sort by effective score ascending (lowest first = delete first)
+        protectable.sort(key=_effective_score)
+
+        for entry_id in protectable[:remaining_remove]:
+            self._cleanup_links(store, entry_id)
             store.delete(entry_id)
             removed += 1
 
+        logger.info(
+            "Prune removed %d memories (%d transient, %d protected kept, %d total after)",
+            removed, len(transient_ids), protected_count, len(store)
+        )
         return removed
+
+    def _cleanup_links(self, store: VectorMemoryStore, removed_id: str):
+        """Remove references to a deleted memory from other memories' related_memories lists."""
+        for mid in store.list_all():
+            meta = store.get_metadata(mid)
+            if meta is None:
+                continue
+            related = meta.get("related_memories", []) or []
+            if not related:
+                continue
+            cleaned = [r for r in related if r != removed_id and r != f"[[{removed_id}]]"]
+            if len(cleaned) != len(related):
+                store.update_metadata_value(mid, "related_memories", cleaned)
 
     def _merge_cluster(self, cluster: List[dict]) -> dict:
         if len(cluster) == 1:

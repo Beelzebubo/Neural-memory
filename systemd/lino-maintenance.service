@@ -1,0 +1,7 @@
+[Unit]
+Description=Lino nightly memory maintenance (compress + prune)
+
+[Service]
+Type=oneshot
+ExecStart=/home/Beelzebub/Documents/neural-memory.bak/scripts/maintenance.sh
+Environment=HOME=/home/Beelzebub

@@ -3,41 +3,102 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Neural Memory</title>
+  <title>Neural Memory — Lino</title>
   <link rel="stylesheet" href="/ui/static/css/app.css">
-  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
-  <script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
-  <script defer src="/ui/static/js/app.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script defer src="/ui/static/js/app.js?v=2"></script>
 </head>
 <body>
   <div id="app">
+
     <header id="topbar">
-      <div class="topbar-left">
-        <span class="logo-icon">🧠</span>
-        <span class="logo-text">Neural Memory</span>
-        <span class="memory-count-badge" id="headerCount">0</span>
-      </div>
-      <div class="topbar-right">
-        <button class="topbar-btn" id="btnSearch" title="Search" data-view="search">
-          <i class="ph ph-magnifying-glass"></i>
-        </button>
-        <button class="topbar-btn" id="btnSettings" title="Settings" data-view="config">
-          <i class="ph ph-gear-six"></i>
-        </button>
+      <div class="topbar-inner">
+        <div class="topbar-left">
+          <div class="logo-mark">
+            <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+              <circle cx="11" cy="11" r="10" stroke="url(#neural-grad)" stroke-width="1.5"/>
+              <circle cx="11" cy="11" r="4" fill="url(#neural-grad)"/>
+              <path d="M11 1v20M1 11h20" stroke="url(#neural-grad)" stroke-width="0.5" opacity="0.4"/>
+              <defs>
+                <linearGradient id="neural-grad" x1="0" y1="0" x2="22" y2="22">
+                  <stop offset="0%" stop-color="#F59E0B"/>
+                  <stop offset="100%" stop-color="#38BDF8"/>
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+          <span class="logo-text">Lino</span>
+          <span class="memory-count-badge" id="headerCount">0</span>
+        </div>
+        <div class="topbar-center">
+          <div class="search-bar">
+            <svg class="search-icon" width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.2"/>
+              <path d="M10 10l3 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            </svg>
+            <input type="text" id="searchInput" placeholder="Search semantic space..." autocomplete="off" spellcheck="false">
+            <button class="search-clear" id="btnClearSearch" title="Clear">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.2"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <button class="topbar-btn" id="btnGraphView" title="Graph view" data-view="graph">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="4" r="2.5" stroke="currentColor" stroke-width="1.2"/>
+              <circle cx="4" cy="12" r="2.5" stroke="currentColor" stroke-width="1.2"/>
+              <circle cx="12" cy="12" r="2.5" stroke="currentColor" stroke-width="1.2"/>
+              <path d="M8 6.5L4 9.5M8 6.5l4 3" stroke="currentColor" stroke-width="1" opacity="0.5"/>
+            </svg>
+          </button>
+          <button class="topbar-btn" id="btnBrowserView" title="List view" data-view="browser">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <rect x="1" y="1" width="14" height="3" rx="1" stroke="currentColor" stroke-width="1.2"/>
+              <rect x="1" y="6.5" width="14" height="3" rx="1" stroke="currentColor" stroke-width="1.2"/>
+              <rect x="1" y="12" width="14" height="3" rx="1" stroke="currentColor" stroke-width="1.2"/>
+            </svg>
+          </button>
+          <button class="topbar-btn" id="btnProfileEdit" title="Edit profile">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="5.5" r="3" stroke="currentColor" stroke-width="1.2"/>
+              <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" stroke-width="1.2"/>
+            </svg>
+          </button>
+          <button class="topbar-btn btn-add" id="btnAddMemory" title="Add memory">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </button>
+        </div>
       </div>
     </header>
 
+    <div class="ambient-grid"></div>
+
     <div id="layout">
+
       <aside id="sidebar">
         <div class="sidebar-section">
           <div class="sidebar-section-header">
-            <span class="sidebar-section-title">Memories</span>
-            <span class="badge" id="sidebarCount">0</span>
+            <span class="sidebar-section-title">Lino Stats</span>
           </div>
-          <div class="sidebar-list" id="sidebarList">
-            <div class="skeleton-line"></div>
-            <div class="skeleton-line"></div>
-            <div class="skeleton-line"></div>
+          <div class="stats-grid">
+            <div class="stat-item">
+              <span class="stat-value" id="statTotal">—</span>
+              <span class="stat-label">Memories</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-value" id="statEdges">—</span>
+              <span class="stat-label">Synapses</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-value" id="statDim">—</span>
+              <span class="stat-label">Dimensions</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-value" id="statCapacity">—</span>
+              <span class="stat-label">Capacity</span>
+            </div>
           </div>
         </div>
 
@@ -45,8 +106,8 @@
 
         <div class="sidebar-section">
           <div class="sidebar-section-header collapsible collapsed" id="tagsHeader">
-            <i class="ph ph-caret-right"></i>
-            <span class="sidebar-section-title">Tags</span>
+            <span class="sidebar-section-title">Neural Clusters</span>
+            <span class="tag-count" id="tagCount">0</span>
           </div>
           <div class="sidebar-list hidden" id="tagsList"></div>
         </div>
@@ -55,301 +116,246 @@
 
         <div class="sidebar-section">
           <div class="sidebar-section-header">
-            <span class="sidebar-section-title">Stats</span>
+            <span class="sidebar-section-title">Graph Controls</span>
           </div>
-          <div class="stats-grid" id="statsGrid">
-            <div class="stat-item">
-              <span class="stat-label">Dimension</span>
-              <span class="stat-value" id="statDim">—</span>
+          <div class="view-controls">
+            <label class="control-label">Visible Neurons</label>
+            <div class="slider-group">
+              <input type="range" class="slider" id="nodeLimitSlider" min="20" max="500" step="10" value="150">
+              <span class="slider-value" id="nodeLimitVal">150</span>
             </div>
-            <div class="stat-item">
-              <span class="stat-label">Total</span>
-              <span class="stat-value" id="statTotal">—</span>
-            </div>
-            <div class="stat-item">
-              <span class="stat-label">Capacity</span>
-              <span class="stat-value" id="statCapacity">—</span>
+            <label class="control-label">Min Importance</label>
+            <div class="slider-group">
+              <input type="range" class="slider" id="minImpSlider" min="0" max="1" step="0.05" value="0">
+              <span class="slider-value" id="minImpVal">0.00</span>
             </div>
           </div>
         </div>
       </aside>
 
       <main id="content">
-        <div id="view-browser" class="view active">
-          <div class="view-toolbar">
-            <div class="search-bar">
-              <i class="ph ph-magnifying-glass search-icon"></i>
-              <input type="text" id="searchInput" placeholder="Search memories..." autocomplete="off">
-              <div class="search-mode-toggle">
-                <button class="toggle-btn active" data-mode="semantic" title="Semantic search">S</button>
-                <button class="toggle-btn" data-mode="keyword" title="Keyword filter">K</button>
-              </div>
-            </div>
-            <button class="btn btn-primary" id="btnAddMemory">
-              <i class="ph ph-plus"></i> Add Memory
-            </button>
+
+        <div id="view-graph" class="view active">
+          <div id="graph-container">
+            <svg id="graph-svg"></svg>
+            <div id="graph-tooltip" class="hidden"></div>
           </div>
+          <div class="graph-legend" id="graphLegend"></div>
+        </div>
 
+        <div id="view-browser" class="view">
           <div id="browserWarnings"></div>
-
           <div id="browserContent">
-            <div class="empty-state" id="emptyState">
-              <div class="empty-icon"><i class="ph ph-database"></i></div>
-              <h3>No memories yet</h3>
-              <p>Add your first memory to start building your semantic store.</p>
-              <button class="btn btn-primary" id="btnEmptyAdd">
-                <i class="ph ph-plus"></i> Add Memory
-              </button>
-            </div>
-
-            <div class="loading-state" id="loadingState">
-              <div class="skeleton-table">
-                <div class="skeleton-row"><div class="skeleton-cell" style="width:5%"></div><div class="skeleton-cell" style="width:40%"></div><div class="skeleton-cell" style="width:15%"></div><div class="skeleton-cell" style="width:12%"></div><div class="skeleton-cell" style="width:18%"></div><div class="skeleton-cell" style="width:10%"></div></div>
-                <div class="skeleton-row"><div class="skeleton-cell" style="width:5%"></div><div class="skeleton-cell" style="width:40%"></div><div class="skeleton-cell" style="width:15%"></div><div class="skeleton-cell" style="width:12%"></div><div class="skeleton-cell" style="width:18%"></div><div class="skeleton-cell" style="width:10%"></div></div>
-                <div class="skeleton-row"><div class="skeleton-cell" style="width:5%"></div><div class="skeleton-cell" style="width:40%"></div><div class="skeleton-cell" style="width:15%"></div><div class="skeleton-cell" style="width:12%"></div><div class="skeleton-cell" style="width:18%"></div><div class="skeleton-cell" style="width:10%"></div></div>
-                <div class="skeleton-row"><div class="skeleton-cell" style="width:5%"></div><div class="skeleton-cell" style="width:40%"></div><div class="skeleton-cell" style="width:15%"></div><div class="skeleton-cell" style="width:12%"></div><div class="skeleton-cell" style="width:18%"></div><div class="skeleton-cell" style="width:10%"></div></div>
+            <div class="empty-state hidden" id="emptyState">
+              <div class="empty-icon">
+                <svg width="48" height="48" viewBox="0 0 48 48" fill="none" opacity="0.3">
+                  <circle cx="24" cy="24" r="20" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 4"/>
+                  <circle cx="24" cy="24" r="8" fill="currentColor" opacity="0.2"/>
+                </svg>
               </div>
+              <h3>No memories yet</h3>
+              <p>Lino is empty. Add your first memory to begin building connections.</p>
+              <button class="btn btn-primary" id="btnEmptyAdd"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Add Memory</button>
             </div>
-
+            <div class="loading-state hidden" id="loadingState">
+              <div class="loader"></div>
+              <p>Loading neural patterns...</p>
+            </div>
             <div class="error-banner hidden" id="errorBanner">
               <span id="errorMessage"></span>
               <button class="btn btn-sm" id="errorRetry">Retry</button>
             </div>
-
+            <div class="sort-bar">
+              <button class="btn btn-sm sort-btn active" data-sort="newest">Newest First</button>
+              <button class="btn btn-sm sort-btn" data-sort="importance">Highest Priority</button>
+            </div>
             <div class="table-container hidden" id="tableContainer">
               <table class="memory-table">
                 <thead>
                   <tr>
-                    <th class="col-check"><input type="checkbox" id="selectAll"></th>
-                    <th class="col-text">Text</th>
+                    <th class="col-text">Memory Trace</th>
                     <th class="col-source">Source</th>
-                    <th class="col-importance">Importance</th>
-                    <th class="col-time">Timestamp</th>
+                    <th class="col-importance">Strength</th>
+                    <th class="col-time">Recorded</th>
                     <th class="col-tags">Tags</th>
-                    <th class="col-actions">Actions</th>
+                    <th class="col-actions"></th>
                   </tr>
                 </thead>
                 <tbody id="memoriesBody"></tbody>
               </table>
               <div class="pagination" id="pagination">
-                <button class="btn btn-sm" id="prevPage" disabled><i class="ph ph-caret-left"></i></button>
+                <button class="btn btn-sm btn-ghost" id="prevPage" disabled><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M7 3L4 6l3 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button>
                 <span id="pageInfo">Page 1</span>
-                <button class="btn btn-sm" id="nextPage"><i class="ph ph-caret-right"></i></button>
+                <button class="btn btn-sm btn-ghost" id="nextPage"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M5 3l3 3-3 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button>
               </div>
-            </div>
-
-            <div class="search-empty hidden" id="searchEmpty">
-              <div class="empty-icon"><i class="ph ph-file-x"></i></div>
-              <h3>No matches found</h3>
-              <p>Try a different query or adjust filters.</p>
             </div>
           </div>
         </div>
 
-        <div id="view-detail" class="view">
-          <div class="detail-header">
-            <button class="btn btn-ghost" id="btnBackToList">
-              <i class="ph ph-arrow-left"></i> Back
+      </main>
+
+      <div id="detailPanel" class="hidden">
+        <div class="detail-panel-inner">
+          <div class="detail-panel-header">
+            <button class="btn btn-ghost btn-icon" id="btnCloseDetail" title="Close">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
             </button>
-            <span class="detail-id" id="detailId"></span>
-          </div>
-
-          <div class="detail-body">
-            <div class="detail-loading">
-              <div class="skeleton-line" style="width:100%;height:120px"></div>
-              <div class="skeleton-line" style="width:60%;height:20px;margin-top:16px"></div>
-              <div class="skeleton-line" style="width:40%;height:20px;margin-top:8px"></div>
+            <span class="detail-panel-title" id="detailPanelTitle">Neuron Detail</span>
+            <div class="detail-panel-actions">
+              <button class="btn btn-sm btn-ghost" id="btnShowLocalGraph" title="Focus local cluster">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="4" r="2" stroke="currentColor" stroke-width="1"/><circle cx="3" cy="9" r="1.5" stroke="currentColor" stroke-width="1"/><circle cx="9" cy="9" r="1.5" stroke="currentColor" stroke-width="1"/></svg>
+                Local
+              </button>
+              <button class="btn btn-sm btn-ghost" id="btnSaveMemory" title="Save">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2h6l2 2v6a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" stroke-width="1.2"/><path d="M3 8h6v3H3z" fill="currentColor" opacity="0.2"/><path d="M4 2v3h3V2" stroke="currentColor" stroke-width="1"/></svg>
+              </button>
+              <button class="btn btn-sm btn-danger" id="btnDeleteMemory" title="Delete">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 3h8M4 3V2a1 1 0 011-1h2a1 1 0 011 1v1M9.5 3l-.5 7.5a1 1 0 01-1 .9H4a1 1 0 01-1-.9L2.5 3" stroke="currentColor" stroke-width="1.2"/></svg>
+              </button>
             </div>
-
+          </div>
+          <div class="detail-panel-body">
+            <div class="detail-loading"><div class="loader"></div></div>
             <div class="detail-content hidden" id="detailContent">
               <div class="detail-section">
-                <label class="detail-label">Text</label>
-                <textarea class="detail-textarea" id="detailText" rows="4"></textarea>
+                <label class="detail-label">Neural Trace</label>
+                <textarea class="detail-textarea" id="detailText" rows="4" spellcheck="false"></textarea>
               </div>
-
               <div class="detail-grid">
                 <div class="detail-section">
                   <label class="detail-label">Source</label>
-                  <input type="text" class="detail-input" id="detailSource">
+                  <input type="text" class="detail-input" id="detailSource" spellcheck="false">
                 </div>
                 <div class="detail-section">
-                  <label class="detail-label">Importance</label>
+                  <label class="detail-label">Synaptic Strength</label>
                   <div class="slider-group">
                     <input type="range" class="slider" id="detailImportance" min="0" max="1" step="0.05">
-                    <span class="slider-value" id="detailImportanceVal">0.5</span>
+                    <span class="slider-value" id="detailImportanceVal">0.50</span>
                   </div>
                 </div>
               </div>
-
               <div class="detail-section">
-                <label class="detail-label">Tags</label>
-                <input type="text" class="detail-input" id="detailTags" placeholder="tag1, tag2, tag3">
+                <label class="detail-label">Cluster Tags</label>
+                <input type="text" class="detail-input" id="detailTags" placeholder="tag1, tag2, tag3" spellcheck="false">
               </div>
-
               <div class="detail-section">
-                <label class="detail-label">Embedding <span class="detail-embedding-dim" id="detailEmbeddingDim"></span></label>
-                <code class="detail-embedding" id="detailEmbedding"></code>
-                <button class="btn btn-sm btn-ghost" id="copyEmbedding">Copy</button>
+                <label class="detail-label">Neuron ID</label>
+                <code class="detail-id-display" id="detailId"></code>
               </div>
-
-              <div class="detail-section detail-meta">
-                <span class="detail-meta-item" id="detailAccessCount"></span>
-                <span class="detail-meta-item" id="detailTimestamp"></span>
-              </div>
-
-              <div class="detail-actions">
-                <button class="btn btn-primary" id="btnSaveMemory"><i class="ph ph-floppy-disk"></i> Save</button>
-                <button class="btn btn-danger" id="btnDeleteMemory"><i class="ph ph-trash"></i> Delete</button>
-                <div class="delete-confirm hidden" id="deleteConfirm">
-                  <span>Are you sure?</span>
-                  <button class="btn btn-danger btn-sm" id="confirmDelete">Yes, delete</button>
-                  <button class="btn btn-sm btn-ghost" id="cancelDelete">Cancel</button>
-                </div>
-              </div>
-
               <div class="detail-section">
-                <label class="detail-label">Similar Memories</label>
-                <div id="similarMemories" class="similar-list">
-                  <div class="text-secondary">Searching...</div>
-                </div>
+                <label class="detail-label">Connected Synapses</label>
+                <div id="detailRelated" class="related-list"><p class="text-secondary">None</p></div>
+              </div>
+              <div class="detail-section hidden" id="profileSection">
+                <label class="detail-label">Preferences</label>
+                <div id="detailPrefs" class="related-list"></div>
+              </div>
+              <div class="detail-section hidden" id="goalsSection">
+                <label class="detail-label">Goals</label>
+                <div id="detailGoals" class="related-list"></div>
+              </div>
+              <div class="detail-section hidden" id="backlinksSection">
+                <label class="detail-label">Backlinks (incoming)</label>
+                <div id="backlinksList" class="related-list"></div>
               </div>
             </div>
           </div>
         </div>
-
-        <div id="view-config" class="view">
-          <div class="config-header">
-            <h2>Configuration</h2>
-          </div>
-          <div class="config-loading">
-            <div class="skeleton-line" style="width:80%;height:24px"></div>
-            <div class="skeleton-line" style="width:60%;height:24px;margin-top:12px"></div>
-            <div class="skeleton-line" style="width:70%;height:24px;margin-top:12px"></div>
-          </div>
-          <div class="config-content hidden" id="configContent">
-            <div class="config-section">
-              <h3 class="config-section-title">Embedder</h3>
-              <div class="config-grid">
-                <div class="config-field">
-                  <label>Model Name</label>
-                  <input type="text" id="cfgModelName" class="config-input">
-                </div>
-                <div class="config-field">
-                  <label>Dimension</label>
-                  <input type="text" id="cfgDimension" class="config-input" disabled>
-                </div>
-              </div>
-            </div>
-
-            <div class="config-section">
-              <h3 class="config-section-title">Store</h3>
-              <div class="config-grid">
-                <div class="config-field">
-                  <label>Capacity</label>
-                  <input type="number" id="cfgCapacity" class="config-input">
-                </div>
-                <div class="config-field">
-                  <label>Prune Strategy</label>
-                  <select id="cfgStrategy" class="config-select">
-                    <option value="hybrid">Hybrid</option>
-                    <option value="by_age">By Age</option>
-                    <option value="by_importance">By Importance</option>
-                    <option value="by_access_frequency">By Access Frequency</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div class="config-section">
-              <h3 class="config-section-title">Retriever</h3>
-              <div class="config-grid">
-                <div class="config-field">
-                  <label>Hybrid Alpha (semantic weight)</label>
-                  <div class="slider-group">
-                    <input type="range" class="slider" id="cfgAlpha" min="0" max="1" step="0.05">
-                    <span class="slider-value" id="cfgAlphaVal">0.5</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="config-section">
-              <h3 class="config-section-title">Consolidator</h3>
-              <div class="config-grid">
-                <div class="config-field">
-                  <label>Max Memories</label>
-                  <input type="number" id="cfgMaxMemories" class="config-input">
-                </div>
-                <div class="config-field">
-                  <label>Min Importance</label>
-                  <input type="number" id="cfgMinImportance" class="config-input" step="0.05" min="0" max="1">
-                </div>
-              </div>
-            </div>
-
-            <div class="config-save">
-              <button class="btn btn-primary" id="btnSaveConfig"><i class="ph ph-floppy-disk"></i> Save Config</button>
-              <button class="btn btn-ghost" id="btnPrune"><i class="ph ph-broom"></i> Prune Now</button>
-            </div>
-
-            <div class="config-section">
-              <h3 class="config-section-title">Import / Export</h3>
-              <div class="config-io">
-                <button class="btn btn-ghost" id="btnExport"><i class="ph ph-download"></i> Export JSON</button>
-                <label class="btn btn-ghost" id="btnImportLabel">
-                  <i class="ph ph-upload"></i> Import JSON
-                  <input type="file" id="btnImport" accept=".json" hidden>
-                </label>
-              </div>
-            </div>
-          </div>
-        </div>
-      </main>
+      </div>
     </div>
-
-    <footer id="statusbar">
-      <div class="status-left">
-        <span class="status-indicator" id="statusDot"></span>
-        <span id="statusText">Online</span>
-      </div>
-      <div class="status-right">
-        <span id="statusPath"></span>
-        <span class="status-version">v0.1.0</span>
-      </div>
-    </footer>
 
     <div class="modal-overlay hidden" id="addModal">
       <div class="modal">
         <div class="modal-header">
-          <h3>New Memory</h3>
-          <button class="btn btn-ghost modal-close" id="modalClose"><i class="ph ph-x"></i></button>
+          <h3>New Memory Trace</h3>
+          <button class="btn btn-ghost btn-icon modal-close" id="modalClose">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </button>
         </div>
         <div class="modal-body">
           <div class="detail-section">
-            <label class="detail-label">Text</label>
-            <textarea class="detail-textarea" id="modalText" rows="4" placeholder="Enter memory text..."></textarea>
+            <label class="detail-label">Memory Content</label>
+            <textarea class="detail-textarea" id="modalText" rows="4" placeholder="What do you want to remember?" spellcheck="false"></textarea>
           </div>
           <div class="detail-grid">
             <div class="detail-section">
               <label class="detail-label">Source</label>
-              <input type="text" class="detail-input" id="modalSource" placeholder="manual">
+              <input type="text" class="detail-input" id="modalSource" placeholder="manual" spellcheck="false">
             </div>
             <div class="detail-section">
-              <label class="detail-label">Importance</label>
+              <label class="detail-label">Strength</label>
               <div class="slider-group">
                 <input type="range" class="slider" id="modalImportance" min="0" max="1" step="0.05">
-                <span class="slider-value" id="modalImportanceVal">0.5</span>
+                <span class="slider-value" id="modalImportanceVal">0.50</span>
               </div>
             </div>
           </div>
           <div class="detail-section">
             <label class="detail-label">Tags</label>
-            <input type="text" class="detail-input" id="modalTags" placeholder="tag1, tag2, tag3">
+            <input type="text" class="detail-input" id="modalTags" placeholder="tag1, tag2, tag3 (use project:name, person:name)" spellcheck="false">
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-primary" id="modalSave"><i class="ph ph-plus"></i> Create</button>
+          <button class="btn btn-primary" id="modalSave"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Create</button>
           <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay hidden" id="profileModal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Edit Profile &amp; Preferences</h3>
+          <button class="btn btn-ghost btn-icon modal-close" id="profileModalClose">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="detail-section">
+            <label class="detail-label">Your Name</label>
+            <input type="text" class="detail-input" id="profileName" placeholder="Your name" spellcheck="false">
+          </div>
+          <div class="detail-section">
+            <label class="detail-label">Role</label>
+            <input type="text" class="detail-input" id="profileRole" placeholder="e.g. Developer, Designer" spellcheck="false">
+          </div>
+          <div class="detail-section">
+            <label class="detail-label">Bio</label>
+            <textarea class="detail-textarea" id="profileBio" rows="2" placeholder="Short bio..." spellcheck="false"></textarea>
+          </div>
+          <div class="sidebar-divider"></div>
+          <div class="detail-section">
+            <label class="detail-label">Learning Goals</label>
+            <input type="text" class="detail-input" id="profileGoals" placeholder="Goal 1, Goal 2, Goal 3" spellcheck="false">
+          </div>
+          <div class="sidebar-divider"></div>
+          <div class="detail-section">
+            <label class="detail-label">Answer Style</label>
+            <select class="detail-input" id="profileAnswerStyle">
+              <option value="concise">Concise — short, direct answers</option>
+              <option value="detailed">Detailed — thorough, in-depth answers</option>
+              <option value="conversational">Conversational — natural dialogue</option>
+            </select>
+          </div>
+          <div class="detail-section">
+            <label class="detail-label">Skills per Task (JSON)</label>
+            <textarea class="detail-textarea" id="profileSkills" rows="3" placeholder='{"frontend": ["skill1", "skill2"], "backend": ["skill3"]}' spellcheck="false"></textarea>
+          </div>
+          <div class="detail-section">
+            <label class="detail-label">Additional Preferences (JSON)</label>
+            <textarea class="detail-textarea" id="profileExtraPrefs" rows="3" placeholder='{"key": "value"}' spellcheck="false"></textarea>
+          </div>
+          <div class="sidebar-divider"></div>
+          <div id="learnedPrefsDisplay" style="display:none">
+            <div class="detail-section">
+              <label class="detail-label">Learned Preferences (from observations)</label>
+              <div id="learnedPrefsContent" class="detail-input" style="min-height:60px;padding:8px;font-size:12px;line-height:1.5;white-space:pre-wrap;color:var(--amber);background:var(--surface);border:1px solid var(--border);border-radius:6px;"></div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary" id="profileSave"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7l3 3 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Save</button>
+          <button class="btn btn-ghost" id="profileCancel">Cancel</button>
         </div>
       </div>
     </div>

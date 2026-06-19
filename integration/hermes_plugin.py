@@ -1,12 +1,18 @@
 import inspect
+import json
+import logging
 import os
 import sys
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 from src import TextEmbedder, VectorMemoryStore, MemoryRetriever, MemoryConsolidator
+
+logger = logging.getLogger(__name__)
 
 TOOL_SCHEMAS = {
     "neural_memory_store": {
@@ -79,13 +85,120 @@ TOOL_SCHEMAS = {
         },
         "required": ["action"],
     },
+    "neural_memory_session_done": {
+        "description": "Call at session end. Stores a structured session summary with key facts, decisions, and actions. Runs session_memory.py under the hood.",
+        "parameters": {
+            "summary": {"type": "string", "description": "Brief summary of what was accomplished this session"},
+            "project": {"type": "string", "description": "Project name (optional)", "nullable": True},
+            "goal": {"type": "string", "description": "Goal description (optional)", "nullable": True},
+            "importance": {"type": "number", "description": "Importance 0.0-1.0 (default 0.85)", "nullable": True},
+            "decisions": {"type": "array", "items": {"type": "string"}, "description": "Key decisions made this session", "nullable": True},
+            "changes": {"type": "array", "items": {"type": "string"}, "description": "Code/config changes made this session", "nullable": True},
+            "facts": {"type": "array", "items": {"type": "string"}, "description": "Important facts learned this session", "nullable": True},
+        },
+        "required": ["summary"],
+    },
+    "neural_memory_link": {
+        "description": "Find semantically similar memories and create bidirectional wikilink connections. Run after storing a new memory to connect it to related context.",
+        "parameters": {
+            "memory_id": {"type": "string", "description": "Memory ID to find connections for"},
+            "max_links": {"type": "integer", "description": "Maximum links to create (default 5)", "nullable": True},
+            "threshold": {"type": "number", "description": "Similarity threshold 0.0-1.0 (default 0.6)", "nullable": True},
+        },
+        "required": ["memory_id"],
+    },
+    "neural_memory_get_profile": {
+        "description": "Get the user's identity profile and preferences. Returns name, role, bio, learning goals, preferences, and learned preferences. Call at session start to personalize responses.",
+        "parameters": {},
+    },
+    "neural_memory_observe_preference": {
+        "description": "Log a user preference observation (e.g., they asked for code examples, or gave explicit instruction). Used by the AI to learn user preferences over time.",
+        "parameters": {
+            "type": {"type": "string", "description": "Observation type: code_style, answer_verbosity, explicit_preference, always_keyword, never_keyword"},
+            "signal": {"type": "string", "description": "What the user said or did (e.g. 'show me the code', 'be more concise')", "nullable": True},
+            "explicit": {"type": "boolean", "description": "Whether this was an explicit preference statement (default: false)", "nullable": True},
+            "source": {"type": "string", "description": "Source context (e.g. 'session:ui-redesign')", "nullable": True},
+        },
+        "required": ["type"],
+    },
+    "neural_memory_log_skill": {
+        "description": "Log that a skill was used during a task. The system uses this to learn which skills to auto-invoke for which task categories.",
+        "parameters": {
+            "skill_path": {"type": "string", "description": "File path to the skill file", "nullable": True},
+            "skill_name": {"type": "string", "description": "Name of the skill used"},
+            "task_category": {"type": "string", "description": "Category of the task (e.g. 'ui/ux design', 'backend', 'testing')"},
+            "task_description": {"type": "string", "description": "Brief description of what the task was", "nullable": True},
+        },
+        "required": ["skill_name", "task_category"],
+    },
+    "neural_memory_consolidate_preferences": {
+        "description": "Run preference consolidation: analyze all observations, update learned preferences, and regenerate the identity document. Call periodically to keep learned preferences up to date.",
+        "parameters": {},
+    },
+    "neural_memory_log_session": {
+        "description": "Log an entry to the active session in real time. Call after each meaningful exchange to prevent context loss. Types: message, decision, fact, change, fix.",
+        "parameters": {
+            "type": {"type": "string", "description": "Entry type: message, decision, fact, change, fix (default: message)", "nullable": True},
+            "content": {"type": "string", "description": "The content of the log entry"},
+            "tags": {"type": "array", "items": {"type": "string"}, "description": "Optional tags for this entry", "nullable": True},
+            "importance": {"type": "number", "description": "Importance 0.0-1.0 (default 0.5)", "nullable": True},
+        },
+        "required": ["content"],
+    },
+    "neural_memory_dream": {
+        "description": "Run the Dream Cycle — 22-phase overnight maintenance pipeline (cluster, merge, compress, prune, recalibrate, backup, etc.). Typically runs daily via systemd timer.",
+        "parameters": {
+            "max_memories": {"type": "integer", "description": "Maximum memories after pruning (default 5000)", "nullable": True},
+            "fail_fast": {"type": "boolean", "description": "Stop on first phase failure (default false)", "nullable": True},
+        },
+    },
+    "neural_memory_job_queue_status": {
+        "description": "Get the job queue status and recent job history.",
+        "parameters": {
+            "limit": {"type": "integer", "description": "Max recent jobs to return (default 50)", "nullable": True},
+        },
+    },
+    "neural_memory_job_enqueue": {
+        "description": "Enqueue a new job for async background processing.",
+        "parameters": {
+            "job_type": {"type": "string", "description": "Job type name (e.g. 'sync-vault', 'compress', 'dream')"},
+            "params": {"type": "object", "description": "Optional JSON params for the job", "nullable": True},
+            "priority": {"type": "integer", "description": "Priority -10 to 10 (higher = more urgent, default 0)", "nullable": True},
+        },
+        "required": ["job_type"],
+    },
+    "neural_memory_job_stats": {
+        "description": "Get job queue statistics (totals by status and type).",
+        "parameters": {},
+    },
 }
 
 DEFAULT_STORE_PATH = Path.home() / ".neural_memory" / "store.pkl"
 
 
+def _ensure_lino_server():
+    import subprocess
+    import socket
+    host = os.environ.get("LINO_HOST", "127.0.0.1")
+    port = int(os.environ.get("LINO_PORT", "8210"))
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.connect((host, port))
+        sock.close()
+        return
+    except ConnectionRefusedError:
+        pass
+    finally:
+        sock.close()
+    script = os.path.join(os.path.dirname(__file__), "..", "bin", "lino-server.sh")
+    script = os.path.abspath(script)
+    if os.path.exists(script):
+        subprocess.check_call(["bash", script])
+
+
 class MemoryPlugin:
     def __init__(self, store_path: Optional[str] = None):
+        _ensure_lino_server()
         raw = store_path or os.environ.get("NEURAL_MEMORY_PATH", "")
         if raw:
             self.store_path = Path(raw).resolve()
@@ -129,15 +242,17 @@ class MemoryPlugin:
         self.store.save(str(self.store_path))
 
     def _get_memory(self, memory_id: str) -> Optional[Dict[str, Any]]:
-        ids = self.store.list_all()
-        if memory_id not in ids:
+        idx = self.store.get_index_of(memory_id)
+        if idx is None:
             return None
-        idx = ids.index(memory_id)
-        meta = dict(self.store._metadata.get(memory_id, {}))
-        emb = self.store._embeddings[idx] if idx < len(self.store._embeddings) else None
+        meta = self.store.get_metadata(memory_id)
+        if meta is None:
+            return None
+        emb = self.store.get_embedding(idx)
+        text = meta.pop("text", "")
         return {
             "id": memory_id,
-            "text": meta.pop("text", ""),
+            "text": text,
             "embedding": emb.tolist() if emb is not None else None,
             "metadata": meta,
         }
@@ -148,12 +263,13 @@ class MemoryPlugin:
         page = ids[offset:offset + limit]
         results = []
         for mid in page:
-            idx = ids.index(mid)
-            meta = dict(self.store._metadata.get(mid, {}))
-            emb = self.store._embeddings[idx] if idx < len(self.store._embeddings) else None
+            idx = self.store.get_index_of(mid)
+            meta = self.store.get_metadata(mid) or {}
+            emb = self.store.get_embedding(idx) if idx is not None else None
+            text = meta.pop("text", "")
             results.append({
                 "id": mid,
-                "text": meta.pop("text", ""),
+                "text": text,
                 "metadata": meta,
             })
         return results, total
@@ -194,7 +310,6 @@ class MemoryPlugin:
         if self.embedder_online and self.embedder:
             emb = self.embedder.embed(text)
         else:
-            import numpy as np
             emb = np.zeros(384).tolist()
         self.store.store(memory_id, emb, metadata)
         self._save_store()
@@ -243,7 +358,7 @@ class MemoryPlugin:
 
     def cmd_stats(self) -> Dict[str, Any]:
         total = len(self.store)
-        dim = self.store._dim if hasattr(self.store, "_dim") else 0
+        dim = self.store.get_dimension()
         return {
             "total_memories": total,
             "dimension": dim,
@@ -254,11 +369,10 @@ class MemoryPlugin:
 
     def cmd_update_priority(self, memory_id: str, priority: float) -> Dict[str, Any]:
         """Update a memory's importance/priority score in-place without re-embedding."""
-        ids = self.store.list_all()
-        if memory_id not in ids:
+        if self.store.get_index_of(memory_id) is None:
             return {"error": f"Memory not found: {memory_id}"}
         priority = max(0.0, min(1.0, float(priority)))
-        self.store._metadata[memory_id]["importance_score"] = priority
+        self.store.update_metadata_value(memory_id, "importance_score", priority)
         self._save_store()
         return {"status": "updated", "memory_id": memory_id, "priority": priority}
 
@@ -317,6 +431,174 @@ class MemoryPlugin:
             return {"status": "timeout", "output": "Compress script exceeded 5-minute timeout"}
         except Exception as e:
             return {"status": "error", "error": str(e)}
+
+    def cmd_session_done(self, summary: str, project: str = "", goal: str = "",
+                         importance: float = 0.85, decisions: Optional[List[str]] = None,
+                         changes: Optional[List[str]] = None,
+                         facts: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Call at session end. Stores a structured session summary."""
+        # Close the active session first
+        try:
+            from app import memory_system
+            memory_system.close_active_session(summary=summary)
+        except Exception:
+            pass
+
+        now_ts = time.time()
+        ts = datetime.fromtimestamp(now_ts, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+        tags = ["session-summary"]
+        if project:
+            tags.append(f"project:{project}")
+        stored_count = 0
+
+        parts = [f"Timestamp: {ts}"]
+        if project:
+            parts.append(f"Project: {project}")
+        if goal:
+            parts.append(f"Goal: {goal}")
+        parts.append(f"\n{summary}")
+
+        if decisions:
+            parts.append(f"\n### Decisions")
+            for d in decisions:
+                parts.append(f"- {d}")
+        if changes:
+            parts.append(f"\n### Changes")
+            for c in changes:
+                parts.append(f"- {c}")
+        if facts:
+            parts.append(f"\n### Facts")
+            for f in facts:
+                parts.append(f"- {f}")
+
+        full_text = "\n".join(parts)
+        source = f"session:{project}" if project else "session"
+
+        memory_id = str(uuid.uuid4())
+        metadata = {
+            "text": full_text,
+            "source": source,
+            "importance_score": importance,
+            "access_count": 0,
+            "timestamp": now_ts,
+            "tags": tags,
+        }
+        if self.embedder_online and self.embedder:
+            emb = self.embedder.embed(full_text)
+        else:
+            emb = np.zeros(384).tolist()
+        self.store.store(memory_id, emb, metadata)
+        stored_count += 1
+
+        if decisions:
+            for d in decisions:
+                did = str(uuid.uuid4())
+                dmeta = {
+                    "text": d,
+                    "source": f"session-decision:{project}" if project else "session-decision",
+                    "importance_score": max(importance - 0.05, 0.0),
+                    "access_count": 0,
+                    "timestamp": now_ts,
+                    "tags": tags + ["decision"],
+                    "related_memories": [memory_id],
+                }
+                if self.embedder_online and self.embedder:
+                    demb = self.embedder.embed(d)
+                else:
+                    demb = np.zeros(384).tolist()
+                self.store.store(did, demb, dmeta)
+                stored_count += 1
+
+        if facts:
+            for f in facts:
+                fid = str(uuid.uuid4())
+                fmeta = {
+                    "text": f,
+                    "source": f"session-fact:{project}" if project else "session-fact",
+                    "importance_score": max(importance - 0.1, 0.0),
+                    "access_count": 0,
+                    "timestamp": now_ts,
+                    "tags": tags + ["fact"],
+                    "related_memories": [memory_id],
+                }
+                if self.embedder_online and self.embedder:
+                    femb = self.embedder.embed(f)
+                else:
+                    femb = np.zeros(384).tolist()
+                self.store.store(fid, femb, fmeta)
+                stored_count += 1
+
+        self._save_store()
+
+        # Auto-link the summary with existing memories
+        link_result = self._link_memory(memory_id, max_links=5, threshold=0.6)
+
+        # Auto-consolidate preferences
+        try:
+            consolidation = memory_system.consolidate_preferences()
+        except Exception:
+            consolidation = {"skipped": True}
+
+        return {
+            "status": "stored",
+            "memory_id": memory_id,
+            "stored_count": stored_count,
+            "links_created": link_result["links_created"],
+            "importance": importance,
+            "project": project or "",
+            "timestamp_utc": ts,
+            "consolidation": consolidation,
+        }
+
+    def _extract_text(self, memory_id: str) -> Optional[str]:
+        meta = self.store.get_metadata(memory_id)
+        if meta is None:
+            return None
+        return meta.get("text", "")
+
+    def _link_memory(self, memory_id: str, max_links: int = 5,
+                     threshold: float = 0.6) -> Dict[str, Any]:
+        """Find semantically similar memories and create bidirectional links."""
+        target_text = self._extract_text(memory_id)
+        if not target_text:
+            return {"status": "skipped", "reason": "memory not found", "links_created": 0}
+
+        if not self.retriever:
+            self._init_retriever()
+        if not self.retriever:
+            return {"status": "skipped", "reason": "retriever unavailable", "links_created": 0}
+
+        results = self.retriever.retrieve(target_text, k=max_links + 1)
+        linked = []
+        for r in results:
+            mid = r.get("id", "")
+            if mid == memory_id:
+                continue
+            score = r.get("score", 0)
+            if score < threshold:
+                continue
+            existing = self.store.get_metadata(memory_id)
+            if existing is None:
+                continue
+            related = existing.get("related_memories", []) or []
+            if mid not in related and f"[[{mid}]]" not in related:
+                related.append(mid)
+                self.store.update_metadata_value(memory_id, "related_memories", related)
+            other_meta = self.store.get_metadata(mid)
+            if other_meta is not None:
+                other_related = other_meta.get("related_memories", []) or []
+                if memory_id not in other_related and f"[[{memory_id}]]" not in other_related:
+                    other_related.append(memory_id)
+                    self.store.update_metadata_value(mid, "related_memories", other_related)
+            linked.append({"memory_id": mid, "similarity": score})
+
+        self._save_store()
+        return {"status": "linked", "links_created": len(linked), "links": linked}
+
+    def cmd_link(self, memory_id: str, max_links: int = 5,
+                 threshold: float = 0.6) -> Dict[str, Any]:
+        """Find semantically similar memories and create bidirectional links."""
+        return self._link_memory(memory_id, max_links, threshold)
 
     def cmd_watchdog(self, action: str = "status") -> Dict[str, Any]:
         """Manage the real-time vault file watcher daemon."""
@@ -377,3 +659,140 @@ class MemoryPlugin:
                     os.remove(pid_file)
                 return {"status": "stopped", "note": "Stale PID file cleaned up"}
             return {"status": "stopped"}
+
+    def _load_observations(self) -> list:
+        p = Path.home() / ".neural_memory" / "preference_observations.json"
+        if p.exists():
+            try:
+                return json.loads(p.read_text())
+            except Exception:
+                return []
+        return []
+
+    def _save_observations(self, obs: list):
+        p = Path.home() / ".neural_memory" / "preference_observations.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if len(obs) > 10000:
+            obs = obs[-10000:]
+        p.write_text(json.dumps(obs, indent=2))
+
+    def cmd_observe_preference(self, type: str, signal: str = "", explicit: bool = False, source: str = "") -> Dict[str, Any]:
+        obs = self._load_observations()
+        obs.append({
+            "id": str(uuid.uuid4()),
+            "type": type,
+            "signal": signal,
+            "explicit": explicit,
+            "source": source,
+            "timestamp": time.time(),
+        })
+        self._save_observations(obs)
+        return {"observed": True, "type": type, "total": len(obs)}
+
+    def cmd_log_skill(self, skill_name: str, task_category: str, skill_path: str = "", task_description: str = "") -> Dict[str, Any]:
+        obs = self._load_observations()
+        obs.append({
+            "id": str(uuid.uuid4()),
+            "type": "skill_usage",
+            "skill_path": skill_path,
+            "skill_name": skill_name,
+            "task_category": task_category,
+            "task_description": task_description,
+            "explicit": False,
+            "timestamp": time.time(),
+        })
+        self._save_observations(obs)
+        return {"logged": True, "skill": skill_name, "category": task_category, "total": len(obs)}
+
+    def cmd_consolidate_preferences(self) -> Dict[str, Any]:
+        from app import memory_system
+        result = memory_system.consolidate_preferences()
+        return result
+
+    def cmd_log_session(self, type: str = "message", content: str = "", tags: Optional[List[str]] = None, importance: float = 0.5) -> Dict[str, Any]:
+        """Log an entry to the active session in real time."""
+        try:
+            from app import memory_system
+            result = memory_system.append_to_session(
+                entry_type=type,
+                content=content,
+                tags=tags,
+                importance=importance,
+            )
+            return result
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def cmd_dream(self, max_memories: int = 5000, fail_fast: bool = False) -> Dict[str, Any]:
+        from scripts.dream_cycle import run_dream_cycle
+        try:
+            result = run_dream_cycle({"max_memories": max_memories, "fail_fast": fail_fast})
+            errors = [n for n, p in result.get("phases", {}).items() if p.get("status") == "error"]
+            return {
+                "status": "ok" if not errors else "partial",
+                "total_elapsed": result.get("total_elapsed", 0),
+                "phases_ok": sum(1 for p in result.get("phases", {}).values() if p.get("status") == "ok"),
+                "phases_error": len(errors),
+                "error_phases": errors,
+                "report_path": result.get("phases", {}).get("dream_report", {}).get("result", {}).get("report_path"),
+            }
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def cmd_job_queue_status(self, limit: int = 50) -> Dict[str, Any]:
+        from scripts.job_queue import job_queue
+        try:
+            return job_queue.status(limit=limit)
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def cmd_job_enqueue(self, job_type: str, params: Optional[Dict] = None, priority: int = 0) -> Dict[str, Any]:
+        from scripts.job_queue import job_queue
+        try:
+            job = job_queue.enqueue(job_type=job_type, params=params or {}, priority=priority)
+            return {"status": "enqueued", "job": job.to_dict()}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def cmd_job_stats(self) -> Dict[str, Any]:
+        from scripts.job_queue import job_queue
+        try:
+            return job_queue.stats()
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def cmd_get_profile(self) -> Dict[str, Any]:
+        """Return the user's identity profile and preferences for Hermes to read at session start."""
+        try:
+            PROC_UUID = str(uuid.uuid5(uuid.NAMESPACE_DNS, "lino-profile"))
+            mem = self._get_memory(PROC_UUID)
+            if not mem:
+                return {"status": "no_profile", "message": "No profile exists yet. Create one via the Lino UI."}
+            meta = mem.get("metadata", {}) or {}
+            profile_data = meta.get("profile_data", {})
+            related = meta.get("related_memories", []) or []
+            linked_entities = []
+            for rid in related:
+                rm = self._get_memory(rid)
+                if rm:
+                    rmeta = rm.get("metadata", {}) or {}
+                    rtags = rmeta.get("tags", []) or []
+                    if "type:preferences" in rtags:
+                        profile_data["preferences"] = rmeta.get("preference_data", {})
+                    if "type:entity" in rtags:
+                        linked_entities.append({
+                            "id": rid,
+                            "text": rmeta.get("text", ""),
+                            "tags": rtags,
+                        })
+            # Include learned preferences
+            id_path = Path.home() / ".neural_memory" / "lino-identity.md"
+            if id_path.exists():
+                profile_data["identity_doc"] = id_path.read_text()
+            return {
+                "status": "ok",
+                "profile": profile_data,
+                "linked_entities": linked_entities,
+            }
+        except Exception as e:
+            return {"status": "error", "error": str(e)}

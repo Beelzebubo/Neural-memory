@@ -1,35 +1,20 @@
-# Lino — Server Configuration
-
-server:
-  host: 127.0.0.1
-  port: 8210
-  workers: 2
-  cors_origins: "*"
-
-store:
-  backend: faiss
-  index_type: flat_ip
-  persistence:
-    auto_save: true
-    save_interval: 50
-    save_path: data/memory_store.pkl
-
+consolidator:
+  max_memories: 5000
+  prune_strategy: by_importance
+  similarity_threshold: 0.85
 embedder:
   model_name: all-MiniLM-L6-v2
-  device: cpu
-
+logging:
+  file: logs/lino.log
+  level: INFO
 retriever:
   default_k: 10
   hybrid_alpha: 0.5
-  min_score: 0.0
-
-consolidator:
-  max_memories: 5000
-  prune_strategy: importance
-
-logging:
-  level: INFO
-  file: logs/lino.log
-
+  min_score: 0
+server:
+  cors_origins: '*'
+  host: 127.0.0.1
+  port: 8210
+  workers: 2
 vault:
   sync_interval_hours: 6

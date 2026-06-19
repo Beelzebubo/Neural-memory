@@ -34,7 +34,7 @@ except ImportError:
     print("watchdog is required. Install with: pip install watchdog")
     sys.exit(1)
 
-VAULT = os.path.expanduser("~/Documents/Hermes_memory")
+VAULT = os.path.expanduser("~/Documents/AI_MEMORIES")
 STORE_PATH = os.path.expanduser("~/.neural_memory/store.pkl")
 MAX_WORDS_PER_CHUNK = 800
 DEBOUNCE_SECONDS = 2

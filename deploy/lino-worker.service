@@ -1,23 +1,21 @@
 [Unit]
-Description=Lino — Neural Memory Server
+Description=Lino Job Queue Worker — processes queued jobs
 Documentation=https://github.com/anomalyco/neural-memory
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
+ExecStart=/usr/bin/python3 /home/Beelzebub/Documents/neural-memory.bak/scripts/job_queue.py worker
 User=Beelzebub
 Group=Beelzebub
 WorkingDirectory=/home/Beelzebub/Documents/neural-memory.bak
-EnvironmentFile=/etc/lino.env
-ExecStart=/usr/bin/python3 -m uvicorn ui.app:app --host 127.0.0.1 --port 8210 --workers 1
-ExecReload=/bin/kill -HUP $MAINPID
-Restart=always
+Restart=on-failure
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1
-
-# Security hardening
-NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+Nice=10
 
 [Install]
 WantedBy=multi-user.target

@@ -54,4 +54,10 @@ backups/
 # Temp
 tmp/
 *.tmp
-.changes-patches/
+changes-patches/
+
+# Build artifacts
+*.pytest_cache/
+.pytest_cache/
+*.pyc
+*.pyo

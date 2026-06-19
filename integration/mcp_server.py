@@ -179,6 +179,36 @@ def handle_request(req: dict) -> dict:
                     "required": ["action"],
                 },
             },
+            {
+                "name": "neural_memory_session_done",
+                "description": "Session end: store structured summary with decisions, changes, facts. Boosts context for next session.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "summary": {"type": "string", "description": "Brief summary of session accomplishments"},
+                        "project": {"type": "string", "description": "Project name (optional)"},
+                        "goal": {"type": "string", "description": "Goal description (optional)"},
+                        "importance": {"type": "number", "description": "Importance 0.0-1.0 (default 0.85)"},
+                        "decisions": {"type": "array", "items": {"type": "string"}, "description": "Key decisions made"},
+                        "changes": {"type": "array", "items": {"type": "string"}, "description": "Code/config changes made"},
+                        "facts": {"type": "array", "items": {"type": "string"}, "description": "Important facts learned"},
+                    },
+                    "required": ["summary"],
+                },
+            },
+            {
+                "name": "neural_memory_link",
+                "description": "Find semantically similar memories and create bidirectional wikilink connections. Use after storing a new memory.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "memory_id": {"type": "string", "description": "Memory ID to find connections for"},
+                        "max_links": {"type": "integer", "description": "Maximum links to create (default 5)"},
+                        "threshold": {"type": "number", "description": "Similarity threshold 0.0-1.0 (default 0.6)"},
+                    },
+                    "required": ["memory_id"],
+                },
+            },
         ]
         return {"jsonrpc": "2.0", "id": req_id, "result": {"tools": tools}}
 

@@ -21,6 +21,8 @@ import argparse
 from pathlib import Path
 from datetime import datetime, timezone
 
+import numpy as np
+
 NEURAL_DIR = os.path.expanduser("~/Documents/Lino")
 sys.path.insert(0, NEURAL_DIR)
 
@@ -39,7 +41,7 @@ PROVIDER_MAP = {
     "anthropic": "https://api.anthropic.com/v1/messages",
 }
 
-VAULT = os.path.expanduser("~/Documents/Hermes_memory")
+VAULT = os.path.expanduser("~/Documents/AI_MEMORIES")
 STORE_PATH = os.path.expanduser("~/.neural_memory/store.pkl")
 DEFAULT_MIN_AGE_HOURS = 24
 COMPRESS_PROMPT = (
@@ -187,7 +189,7 @@ def main():
 
     candidates = []
     for mid in store.list_all():
-        meta = store._metadata.get(mid, {})
+        meta = store.get_metadata(mid) or {}
         tier = meta.get("tier", "active")
         importance = meta.get("importance_score", 0.5)
         timestamp = meta.get("timestamp", now)
@@ -248,14 +250,17 @@ def main():
         # Re-embed the compressed text
         try:
             new_emb = embedder.embed(compressed)
-            idx = store._ids.index(mid)
-            import numpy as np
-            store._embeddings[idx] = np.array(new_emb, dtype=np.float32)
-            store._metadata[mid]["text"] = compressed
-            store._metadata[mid]["tier"] = "compressed"
-            old_imp = store._metadata[mid].get("importance_score", 0.5)
-            store._metadata[mid]["importance_score"] = min(old_imp + 0.1, 0.9)
-            store._metadata[mid]["_compressed_at"] = now
+            idx = store.get_index_of(mid)
+            if idx is None:
+                print(f"ERROR: memory {mid} not found in store")
+                error_count += 1
+                continue
+            store.set_embedding(idx, np.array(new_emb, dtype=np.float32))
+            store.update_metadata_value(mid, "text", compressed)
+            store.update_metadata_value(mid, "tier", "compressed")
+            old_imp = (store.get_metadata(mid) or {}).get("importance_score", 0.5)
+            store.update_metadata_value(mid, "importance_score", min(old_imp + 0.1, 0.9))
+            store.update_metadata_value(mid, "_compressed_at", now)
         except Exception as e:
             print(f"  ERROR updating store: {e}")
             error_count += 1
@@ -269,7 +274,8 @@ def main():
                     raw = f.read()
                 fm, _ = parse_frontmatter(raw)
                 fm["tier"] = "compressed"
-                fm["priority"] = store._metadata[mid].get("importance_score", 0.9)
+                updated_meta = store.get_metadata(mid) or {}
+                fm["priority"] = updated_meta.get("importance_score", 0.9)
                 fm["last_accessed"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
                 new_content = build_frontmatter(fm) + "\n" + compressed
                 with open(fpath, "w") as f:

@@ -49,6 +49,9 @@ class TestMemoryRetriever:
                     })
                 return results
 
+            def get_metadata(self, eid):
+                return dict(self._metadata[eid]) if eid in self._metadata else None
+
             def list_all(self):
                 return list(self._ids)
 

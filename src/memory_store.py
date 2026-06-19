@@ -1,8 +1,11 @@
+import logging
 import pickle
 import time
-from typing import Dict, List
+from typing import Any, Dict, List, Optional
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 class VectorMemoryStore:
@@ -131,6 +134,40 @@ class VectorMemoryStore:
         self._try_init_faiss(self._dim)
         if self._use_faiss and self._embeddings:
             self._index.add(np.stack(self._embeddings, axis=0))
+
+    def get_metadata(self, id: str) -> Optional[dict]:
+        if id in self._metadata:
+            return dict(self._metadata[id])
+        return None
+
+    def update_metadata_value(self, id: str, key: str, value: Any) -> None:
+        if id in self._metadata:
+            self._metadata[id][key] = value
+
+    def get_embedding(self, idx: int) -> Optional[np.ndarray]:
+        if 0 <= idx < len(self._embeddings):
+            return self._embeddings[idx]
+        return None
+
+    def get_embedding_by_id(self, id: str) -> Optional[np.ndarray]:
+        try:
+            idx = self._ids.index(id)
+            return self._embeddings[idx]
+        except ValueError:
+            return None
+
+    def set_embedding(self, idx: int, embedding: np.ndarray) -> None:
+        if 0 <= idx < len(self._embeddings):
+            self._embeddings[idx] = embedding
+
+    def get_index_of(self, id: str) -> Optional[int]:
+        try:
+            return self._ids.index(id)
+        except ValueError:
+            return None
+
+    def get_dimension(self) -> int:
+        return self._dim
 
     def __len__(self) -> int:
         return len(self._ids)

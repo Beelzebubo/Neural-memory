@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "lino-memory": {
+      "command": "python",
+      "args": ["integration/mcp_server.py"]
+    }
+  }
+}

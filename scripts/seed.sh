@@ -11,7 +11,7 @@ cd "$PROJECT_DIR"
 
 [ -f .env ] && set -a && source .env && set +a
 
-VAULT_PATH="${OBSIDIAN_VAULT_PATH:-$HOME/Documents/Hermes_memory}"
+VAULT_PATH="${OBSIDIAN_VAULT_PATH:-$HOME/Documents/AI_MEMORIES}"
 HOST="${LINO_HOST:-127.0.0.1}"
 PORT="${LINO_PORT:-8210}"
 API_BASE="http://${HOST}:${PORT}/api"

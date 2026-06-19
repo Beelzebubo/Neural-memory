@@ -60,6 +60,23 @@ def main():
     p_comp.add_argument("--provider", default="groq", help="LLM provider (groq, openai, anthropic)")
     p_comp.add_argument("--model", default="gemini-2.5-flash", help="LLM model name")
 
+    # session-done
+    p_sd = sub.add_parser("session-done", help="Store session summary with key facts")
+    p_sd.add_argument("summary", help="Session summary text")
+    p_sd.add_argument("--project", default="", help="Project name")
+    p_sd.add_argument("--goal", default="", help="Goal description")
+    p_sd.add_argument("--importance", type=float, default=0.85, help="Importance 0.0-1.0")
+    p_sd.add_argument("--decisions", nargs="*", default=[], help="Key decisions")
+    p_sd.add_argument("--changes", nargs="*", default=[], help="Key changes")
+    p_sd.add_argument("--facts", nargs="*", default=[], help="Important facts")
+
+    # link
+    p_link = sub.add_parser("link", help="Find similar memories and create bidirectional links")
+    p_link.add_argument("memory_id", nargs="?", default=None, help="Memory ID to find connections for")
+    p_link.add_argument("--all", action="store_true", dest="link_all", help="Link all memories")
+    p_link.add_argument("--max-links", type=int, default=5, help="Maximum links to create")
+    p_link.add_argument("--threshold", type=float, default=0.6, help="Similarity threshold")
+
     # watchdog
     p_watch = sub.add_parser("watchdog", help="Manage vault file watcher daemon")
     p_watch.add_argument("action", choices=["start", "stop", "status"], help="Action")
@@ -103,6 +120,43 @@ def main():
             model=args.model,
         )
         print(json.dumps(result, indent=2))
+
+    elif args.command == "session-done":
+        result = plugin.cmd_session_done(
+            summary=args.summary,
+            project=args.project,
+            goal=args.goal,
+            importance=args.importance,
+            decisions=args.decisions or None,
+            changes=args.changes or None,
+            facts=args.facts or None,
+        )
+        print(json.dumps(result, indent=2))
+
+    elif args.command == "link":
+        if args.link_all:
+            all_ids = plugin.cmd_list(limit=10000)["memories"]
+            total = len(all_ids)
+            linked = 0
+            errors = 0
+            print(f"Linking {total} memories...")
+            for i, mem in enumerate(all_ids):
+                try:
+                    res = plugin.cmd_link(mem["id"], max_links=args.max_links, threshold=args.threshold)
+                    if res.get("status") == "linked":
+                        linked += res.get("links_created", 0)
+                    print(f"  [{i+1}/{total}] {mem['id'][:12]}... → {res.get('links_created', 0)} links", flush=True)
+                except Exception as e:
+                    errors += 1
+                    print(f"  [{i+1}/{total}] {mem['id'][:12]}... ERROR: {e}", flush=True)
+            print(json.dumps({"total": total, "total_links_created": linked, "errors": errors}, indent=2))
+        else:
+            result = plugin.cmd_link(
+                memory_id=args.memory_id,
+                max_links=args.max_links,
+                threshold=args.threshold,
+            )
+            print(json.dumps(result, indent=2))
 
     elif args.command == "watchdog":
         result = plugin.cmd_watchdog(action=args.action)

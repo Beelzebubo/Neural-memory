@@ -1,3 +1,4 @@
+import logging
 import re
 from typing import Dict, List
 
@@ -5,6 +6,8 @@ import numpy as np
 
 from .embedder import TextEmbedder
 from .memory_store import VectorMemoryStore
+
+logger = logging.getLogger(__name__)
 
 
 class MemoryRetriever:
@@ -22,13 +25,12 @@ class MemoryRetriever:
     def retrieve_by_metadata(self, filters: dict) -> List[dict]:
         results = []
         for entry_id in self.store.list_all():
-            meta = self.store._metadata.get(entry_id, {})
+            meta = self.store.get_metadata(entry_id)
+            if meta is None:
+                continue
             match = True
             for key, value in filters.items():
-                if key not in meta:
-                    match = False
-                    break
-                if meta[key] != value:
+                if key not in meta or meta[key] != value:
                     match = False
                     break
             if match:
@@ -49,10 +51,14 @@ class MemoryRetriever:
         query_tokens = set(self._tokenize(query))
         keyword_scores: Dict[str, float] = {}
         for entry_id in self.store.list_all():
-            meta = self.store._metadata.get(entry_id, {})
+            meta = self.store.get_metadata(entry_id)
+            if meta is None:
+                continue
             source = meta.get("source", "")
-            source_tokens = self._tokenize(source)
-            overlap = len(query_tokens & set(source_tokens)) if source_tokens else 0
+            text = meta.get("text", "")
+            combined_text = f"{source} {text}"
+            entry_tokens = self._tokenize(combined_text)
+            overlap = len(query_tokens & set(entry_tokens)) if entry_tokens else 0
             keyword_scores[entry_id] = overlap / max(len(query_tokens), 1)
 
         combined = []
@@ -62,7 +68,7 @@ class MemoryRetriever:
             kw_score = keyword_scores.get(entry_id, 0.0)
             combined_score = alpha * sem_score + (1 - alpha) * kw_score
 
-            meta = self.store._metadata.get(entry_id, {})
+            meta = self.store.get_metadata(entry_id) or {}
             combined.append({
                 "id": entry_id,
                 "score": combined_score,
