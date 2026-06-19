@@ -283,6 +283,20 @@ Config file at `config/config.yaml`:
 | `~/.neural_memory/preference_observations.json` | Observed preferences (max 10k) |
 | `~/.neural_memory/lino-identity.md` | Generated identity document |
 | `~/.neural_memory/watchdog.pid` | Watchdog daemon PID |
+| `~/.neural_memory/consolidated_exports/` | Dream cycle markdown exports (fallback — no Obsidian) |
+| `~/.neural_memory/job_queue.json` | Persistent job queue (crash-safe) |
+| `~/.neural_memory/dream_report.md` | Dream cycle phase report |
+
+### Consolidated Export
+
+After each dream cycle, the cleaned memory store is exported as markdown files:
+
+- **With Obsidian vault:** Set `OBSIDIAN_VAULT_PATH=~/Documents/YourVault` in `.env`.  
+  Exports go to `YourVault/_consolidated/YYYY-MM-DD/`. Each memory = one `.md` file.
+- **Without Obsidian:** No config needed. Exports go to  
+  `~/.neural_memory/_consolidated/YYYY-MM-DD/`. Same format, readable in any markdown viewer.
+
+Each export folder includes an `INDEX.md` listing all exported memories with ID, title, importance, and tags.
 
 ## Scripts
 
@@ -300,6 +314,8 @@ Config file at `config/config.yaml`:
 | `scripts/session_memory.py` | Session summarization |
 | `scripts/evaluate.py` | Retrieval accuracy (Recall@K, MAP, MRR) |
 | `scripts/train.py` | Batch embedding training |
+| `scripts/dream_cycle.py` | 22-phase overnight maintenance pipeline |
+| `scripts/job_queue.py` | Persistent job queue with worker daemon |
 
 ## Tests
 
@@ -328,9 +344,9 @@ pytest tests/ -v
 | Identity / Profile System | ✅ Done |
 | Batch Relink (`POST /api/relink`) | ✅ Done |
 | Auto-start on opencode / Hermes init | ✅ Done |
-| Dream Cycle (22-phase overnight maintenance) | ⬜ |
+| Dream Cycle (22-phase overnight maintenance) | ✅ Done |
+| Job Queue (crash-safe sub-agents + worker) | ✅ Done |
 | Schema Packs (canonical page types) | ⬜ |
-| Job Queue (crash-safe sub-agents) | ⬜ |
 | Code Intelligence (Tree-sitter) | ⬜ |
 | Ingestion / Import (file watcher, webhooks) | ⬜ |
 | Evaluation Framework | ⬜ |

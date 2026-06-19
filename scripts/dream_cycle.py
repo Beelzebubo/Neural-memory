@@ -9,8 +9,10 @@ Callable standalone or via API.
 import json
 import logging
 import os
+import re
 import sys
 import time
+import uuid
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,7 +36,7 @@ PHASE_NAMES = [
     "compress_transients", "compress_low_importance", "prune_transients",
     "prune_by_score", "close_stale_sessions", "summarize_sessions",
     "consolidate_preferences", "regenerate_identity", "rebuild_graph_cache",
-    "backup", "dream_report", "metrics", "integrity_verify", "cooldown",
+    "backup", "export_consolidated", "dream_report", "metrics", "integrity_verify", "cooldown",
 ]
 
 
@@ -97,6 +99,7 @@ class DreamCycle:
         self._phase("regenerate_identity", self._phase_regenerate_identity)
         self._phase("rebuild_graph_cache", self._phase_rebuild_graph_cache)
         self._phase("backup", self._phase_backup)
+        self._phase("export_consolidated", self._phase_export_consolidated)
         self._phase("dream_report", self._phase_dream_report)
         self._phase("metrics", self._phase_metrics)
         self._phase("integrity_verify", self._phase_integrity_verify)
@@ -185,24 +188,63 @@ class DreamCycle:
         if len(memories) < 2:
             return {"clusters": 0}
         merged = self.consolidator.consolidate(memories, threshold=0.85)
-        clusters_found = len(merged) - len(memories)
-        return {"clusters": max(0, clusters_found)}
+        stored_ids = set()
+        merged_count = 0
+        for entry in merged:
+            if "id" in entry:
+                stored_ids.add(entry["id"])
+            else:
+                merged_count += 1
+                text = entry.get("text", "")
+                meta = entry.get("metadata", {})
+                emb = entry.get("embedding")
+                mid = str(uuid.uuid4())
+                if emb is not None:
+                    self.store.store(mid, emb, {"text": text, **meta})
+                elif self.embedder and text:
+                    new_emb = self.embedder.embed(text)
+                    self.store.store(mid, new_emb, {"text": text, **meta})
+                stored_ids.add(mid)
+        all_ids = {m["id"] for m in memories}
+        gones = all_ids - stored_ids
+        if gones:
+            logger.info("Cluster phase: removing %d merged duplicates, storing %d clusters", len(gones), merged_count)
+            for mid in gones:
+                self.store.delete(mid)
+            self._save_store()
+        return {"clusters": merged_count, "removed_originals": len(gones)}
 
     def _phase_merge(self) -> dict:
         return {"merged": 0, "note": "merge handled inside cluster phase"}
 
     def _phase_duplicate_detect(self) -> dict:
         texts = {}
-        duplicates = 0
+        to_delete = []
+        kept = 0
         for mid in self.store.list_all():
             meta = self.store.get_metadata(mid) or {}
             t = (meta.get("text", "") or "").strip().lower()
             if len(t) < 10:
                 continue
-            if t in texts:
-                duplicates += 1
-            texts[t] = mid
-        return {"duplicate_texts": duplicates}
+            existing = texts.get(t)
+            if existing:
+                existing_imp = (self.store.get_metadata(existing) or {}).get("importance_score", 0)
+                current_imp = meta.get("importance_score", 0)
+                if current_imp > existing_imp:
+                    to_delete.append(existing)
+                    texts[t] = mid
+                    kept += 1
+                else:
+                    to_delete.append(mid)
+            else:
+                texts[t] = mid
+                kept += 1
+        if to_delete:
+            logger.info("Dedup: removing %d duplicate texts, keeping %d", len(to_delete), kept)
+            for mid in to_delete:
+                self.store.delete(mid)
+            self._save_store()
+        return {"duplicate_texts": len(to_delete), "kept": kept}
 
     def _phase_recalibrate(self) -> dict:
         now = time.time()
@@ -221,8 +263,11 @@ class DreamCycle:
             if len(related) >= 3:
                 new_imp = min(imp + 0.05, 1.0)
                 boosted += 1
-            if access == 0 and (now - ts) > 86400 * 14:
-                new_imp = max(imp - 0.1, 0.1)
+            if access < 2 and (now - ts) > 86400 * 7:
+                new_imp = max(imp - 0.15, 0.1)
+                decayed += 1
+            elif imp < 0.3 and (now - ts) > 86400 * 3:
+                new_imp = max(imp - 0.1, 0.05)
                 decayed += 1
             if "session-summary" in tags:
                 new_imp = max(new_imp, 0.6)
@@ -234,7 +279,7 @@ class DreamCycle:
         return self._run_compress(tier_filter="transient")
 
     def _phase_compress_low_importance(self) -> dict:
-        return self._run_compress(importance_max=0.4, min_age_hours=48)
+        return self._run_compress(importance_max=0.5, min_age_hours=24)
 
     def _run_compress(self, tier_filter: Optional[str] = None, importance_max: Optional[float] = None, min_age_hours: int = 0) -> dict:
         from scripts.rip_and_compress import call_llm, LLM_CONFIG
@@ -278,9 +323,12 @@ class DreamCycle:
 
     def _phase_prune_transients(self) -> dict:
         before = len(self.store)
-        removed = self.consolidator.prune(self.store, max_size=before, strategy="hybrid")
+        target = max(int(before * 0.8), 100)
+        if before <= target:
+            return {"removed": 0, "remaining": before, "reason": "below_target"}
+        removed = self.consolidator.prune(self.store, max_size=target, strategy="hybrid")
         self._save_store()
-        return {"removed": removed, "remaining": len(self.store)}
+        return {"removed": removed, "remaining": len(self.store), "target": target}
 
     def _phase_prune_by_score(self) -> dict:
         max_memories = self.config.get("max_memories", 5000)
@@ -353,9 +401,68 @@ class DreamCycle:
         shutil.copy2(STORE_PATH, dst)
         return {"backup_path": dst}
 
+    def _phase_export_consolidated(self) -> dict:
+        vault_path = os.environ.get("OBSIDIAN_VAULT_PATH", "")
+        if vault_path and os.path.isdir(os.path.expanduser(vault_path)):
+            base = os.path.expanduser(vault_path)
+            source = "obsidian"
+        else:
+            base = os.path.expanduser("~/.neural_memory")
+            source = "fallback"
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        export_dir = os.path.join(base, "_consolidated", date_str)
+        os.makedirs(export_dir, exist_ok=True)
+        exported = 0
+        skipped = 0
+        info = []
+        for mid in self.store.list_all():
+            meta = self.store.get_metadata(mid) or {}
+            text = meta.get("text", "") or ""
+            if len(text.strip()) < 20:
+                skipped += 1
+                continue
+            title = text.strip().split("\n")[0][:60]
+            safe_title = re.sub(r'[^\w\s-]', '', title).strip().replace(" ", "_")[:40] or mid[:8]
+            tags = meta.get("tags", []) or []
+            imp = meta.get("importance_score", 0.5)
+            merged = meta.get("merged_from", 1)
+            content = f"""---
+id: {mid}
+source: consolidated
+importance: {imp}
+tags: [{', '.join(tags)}]
+merged_from: {merged}
+---
+
+{text}
+"""
+            fp = os.path.join(export_dir, f"{mid[:8]}_{safe_title}.md")
+            with open(fp, "w") as f:
+                f.write(content)
+            exported += 1
+            info.append({"id": mid[:8], "title": title, "importance": imp, "tags": tags})
+        index_lines = [
+            f"# Consolidated Export — {date_str}",
+            "",
+            f"**Target:** {source}",
+            f"**Total memories:** {exported}",
+            f"**Skipped (noise):** {skipped}",
+            "",
+            "| ID | Title | Importance | Tags |",
+            "|---|-------|------------|------|",
+        ]
+        for entry in info:
+            tag_str = ", ".join(entry["tags"])
+            index_lines.append(f"| {entry['id']} | {entry['title']} | {entry['importance']} | {tag_str} |")
+        index_lines.append("")
+        with open(os.path.join(export_dir, "INDEX.md"), "w") as f:
+            f.write("\n".join(index_lines))
+        return {"exported": exported, "skipped": skipped, "path": export_dir, "target": source}
+
     def _phase_dream_report(self) -> dict:
+        elapsed = time.time() - self.start_time if self.start_time else 0
         lines = ["# Dream Cycle Report", f"**Date:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}", ""]
-        lines.append(f"**Total time:** {self.results.get('total_elapsed', 0):.1f}s")
+        lines.append(f"**Total time so far:** {elapsed:.1f}s")
         lines.append(f"**Phases:** {len([p for p in self.results.get('phases', {}).values() if p.get('status') == 'ok'])} ok, "
                      f"{len([p for p in self.results.get('phases', {}).values() if p.get('status') == 'error'])} errors")
         lines.append("")
@@ -399,7 +506,13 @@ class DreamCycle:
         prelude = self.results.get("phases", {}).get("prelude", {}).get("result", {})
         before = prelude.get("total_memories", 0) if isinstance(prelude, dict) else 0
         after = len(self.store.list_all())
-        return {"memories_before": before, "memories_after": after}
+        import subprocess
+        r = subprocess.run(["systemctl", "restart", "lino.service"], capture_output=True, text=True, timeout=15)
+        if r.returncode == 0:
+            logger.info("Lino server restarted after dream cycle")
+        else:
+            logger.warning("Failed to restart lino.service: %s", r.stderr.strip())
+        return {"memories_before": before, "memories_after": after, "server_restarted": r.returncode == 0}
 
 
 def run_dream_cycle(config: Optional[dict] = None) -> dict:
