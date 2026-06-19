@@ -1,6 +1,6 @@
 # Lino — Neural Memory Server
 
-A memory system that runs on your laptop. Feed it notes, conversations, or code, and it stores them as searchable vectors. Then you can ask questions, browse a knowledge graph, or run brainstorming sessions. All through a web UI, API, or CLI.
+A memory system that runs on your PC. Feed it notes, conversations, or code, and it stores them as searchable vectors. Then you can ask questions, browse a knowledge graph, or run brainstorming sessions. All through a web UI, API, or CLI.
 
 ## Quick Start
 
