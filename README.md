@@ -72,7 +72,7 @@ Cross-pollination finds meta-insights. Similar ideas merge automatically. You ca
 ```bash
 curl -X POST http://localhost:8210/api/brainstorm \
   -H "Content-Type: application/json" \
-  -d '{"topic": "How to get into NYU Abu Dhabi", "n_ideas": 5}'
+  -d '{"topic": "How to get into a good research program?", "n_ideas": 5}'
 ```
 
 The UI shows a force-directed graph. Click a node to see the thinking process. Bottom panel has a session summary with "Show More" for full detail.
